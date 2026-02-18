@@ -619,7 +619,7 @@ body {
     display: flex;
     align-items: center;
     gap: 4px;
-    padding-right: 16px;
+    padding: 16px 16px 8px;
 }
 
 .cart__title {
@@ -788,16 +788,6 @@ body {
     margin-bottom: 16px;
 }
 
-.form-group--half {
-    flex: 1;
-    min-width: 0;
-}
-
-.form-row {
-    display: flex;
-    gap: 12px;
-}
-
 .form-label {
     display: block;
     font-size: 11px;
@@ -839,6 +829,56 @@ input[type="date"].form-input,
 input[type="time"].form-input {
     -webkit-appearance: auto;
     appearance: auto;
+}
+
+/* Фикс даты/времени на iPhone — компактнее, не налазит */
+.form-row {
+    display: flex;
+    gap: 8px;
+}
+
+.form-group--half {
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+.form-group--half .form-input {
+    font-size: 13px;
+    padding: 10px 8px;
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* iOS date input fix — убираем лишнюю ширину */
+input[type="date"].form-input {
+    min-height: 44px;
+}
+
+select.form-input {
+    min-height: 44px;
+}
+
+/* Placeholder видимость на iOS */
+.form-input::placeholder,
+.form-textarea::placeholder {
+    color: var(--hint);
+    opacity: 1; /* iOS по умолчанию ставит opacity < 1 */
+    -webkit-text-fill-color: var(--hint);
+}
+
+/* Фикс -webkit-text-fill-color для обычного текста */
+.form-input {
+    -webkit-text-fill-color: var(--text);
+}
+
+.form-input:placeholder-shown {
+    -webkit-text-fill-color: var(--hint);
+}
+
+.form-input:not(:placeholder-shown) {
+    -webkit-text-fill-color: var(--text);
 }
 
 /* ══ Order Summary ══ */

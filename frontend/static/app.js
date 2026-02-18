@@ -463,7 +463,6 @@ function renderProductScreen(p) {
 
     $screenProduct.innerHTML = `
         <div class="detail">
-            <button class="detail__back" onclick="showScreen('catalog')">← Назад</button>
             <div class="detail__gallery" id="detail-gallery">${galleryHtml}</div>
             ${p.pictures.length > 1 ? `<div class="detail__gallery-dots" id="detail-dots">${dotsHtml}</div>` : ''}
             <div class="detail__body">
@@ -607,7 +606,6 @@ function renderCartScreen() {
         $screenCart.innerHTML = `
             <div class="cart">
                 <div class="cart__header">
-                    <button class="detail__back" onclick="showScreen('catalog')">← Назад</button>
                     <h2 class="cart__title">Корзина</h2>
                 </div>
                 <div class="empty">Корзина пуста</div>
@@ -643,7 +641,6 @@ function renderCartScreen() {
     $screenCart.innerHTML = `
         <div class="cart">
             <div class="cart__header">
-                <button class="detail__back" onclick="showScreen('catalog')">← Назад</button>
                 <h2 class="cart__title">Корзина</h2>
             </div>
             <div class="cart__items">${itemsHtml}</div>
@@ -692,7 +689,6 @@ function openOrderForm() {
     $screenOrder.innerHTML = `
         <div class="order-form">
             <div class="cart__header">
-                <button class="detail__back" onclick="showScreen('cart')">← Назад</button>
                 <h2 class="cart__title">Оформление</h2>
             </div>
 
@@ -903,6 +899,16 @@ function formatPrice(price) {
 function showLoading(show) {
     $loading.classList.toggle('visible', show);
 }
+
+// ── Закрытие клавиатуры при тапе вне input/textarea ──
+document.addEventListener('touchstart', (e) => {
+    const active = document.activeElement;
+    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
+        if (!e.target.closest('input, textarea, select, label')) {
+            active.blur();
+        }
+    }
+}, { passive: true });
 
 // ── Start ──
 init();
