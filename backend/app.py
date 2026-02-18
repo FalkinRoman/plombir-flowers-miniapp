@@ -26,10 +26,13 @@ _cache: dict = {
 async def refresh_feed():
     """Загрузить/обновить данные из YML-фида."""
     import datetime
+    import random
     try:
         data = await fetch_and_parse()
         _cache["categories"] = data["categories"]
-        _cache["products"] = data["products"]
+        products = data["products"]
+        random.shuffle(products)
+        _cache["products"] = products
         _cache["loaded"] = True
         _cache["last_update"] = datetime.datetime.now().isoformat()
         print(f"✅ Фид обновлён: {len(data['categories'])} категорий, {len(data['products'])} товаров")

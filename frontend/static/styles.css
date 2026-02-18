@@ -143,7 +143,7 @@ body {
     background: none;
     color: var(--hint);
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 700;
     cursor: pointer;
     transition: all 0.2s;
     font-family: var(--font);
@@ -177,11 +177,11 @@ body {
     flex-shrink: 0;
     padding: 6px 14px;
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: 6px;
     background: none;
     color: var(--hint);
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 700;
     cursor: pointer;
     transition: all 0.2s;
     font-family: var(--font);
@@ -204,7 +204,7 @@ body {
     width: 100%;
     padding: 10px 14px;
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border-radius: 6px;
     background: var(--secondary-bg);
     color: var(--text);
     font-size: 14px;
@@ -257,13 +257,13 @@ body {
 }
 
 .product-card__info {
-    padding: 10px 8px 16px;
-    text-align: center;
+    padding: 12px 10px 4px;
+    text-align: left;
 }
 
 .product-card__name {
-    font-size: 11px;
-    font-weight: 600;
+    font-size: 13px;
+    font-weight: 700;
     line-height: 1.4;
     text-transform: uppercase;
     letter-spacing: var(--letter-spacing);
@@ -271,14 +271,15 @@ body {
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
-    margin-bottom: 6px;
+    margin-bottom: 8px;
     color: var(--text);
 }
 
 .product-card__price {
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 400;
     letter-spacing: 0.02em;
+    margin-bottom: 2px;
 }
 .product-card__price--old {
     font-size: 12px;
@@ -311,6 +312,47 @@ body {
     letter-spacing: 0;
 }
 
+/* ══ Card buttons ══ */
+.product-card__buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 10px 16px;
+}
+.product-card__btn {
+    display: block;
+    width: 100%;
+    padding: 10px 0;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: var(--font);
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing);
+    transition: all 0.2s;
+}
+.product-card__btn--detail {
+    border: 1px solid var(--border);
+    background: none;
+    color: var(--text);
+}
+.product-card__btn--detail:active {
+    background: var(--secondary-bg);
+}
+.product-card__btn--cart {
+    border: none;
+    background: var(--btn-dark);
+    color: var(--btn-dark-text);
+}
+.product-card__btn--cart:active {
+    opacity: 0.85;
+}
+.product-card__btn--cart.btn-added {
+    background: var(--success);
+}
+
 /* ══════════════════════════════════════════════
    LOAD MORE — как на сайте: "ЗАГРУЗИТЬ ЕЩЁ"
    ══════════════════════════════════════════════ */
@@ -321,7 +363,7 @@ body {
 .btn-load-more {
     padding: 12px 40px;
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: 6px;
     background: none;
     color: var(--text);
     font-size: 12px;
@@ -381,8 +423,8 @@ body {
     display: block;
     width: 100%;
     padding: 14px 24px;
-    border: none;
-    border-radius: var(--radius);
+    border: 1px solid var(--btn-dark);
+    border-radius: 6px;
     background: var(--btn-dark);
     color: var(--btn-dark-text);
     font-size: 13px;
@@ -402,7 +444,7 @@ body {
     width: 100%;
     padding: 12px 24px;
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: 6px;
     background: none;
     color: var(--text);
     font-size: 13px;
@@ -423,19 +465,26 @@ body {
    PRODUCT DETAIL
    ══════════════════════════════════════════════ */
 .detail__back {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    padding: 14px 16px;
+    padding: 10px 24px;
     background: none;
-    border: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
     font-size: 13px;
-    font-weight: 600;
+    font-weight: 700;
     color: var(--text);
     cursor: pointer;
     font-family: var(--font);
     gap: 6px;
     text-transform: uppercase;
     letter-spacing: var(--letter-spacing);
+    margin: 12px 16px;
+    transition: all 0.2s;
+}
+.detail__back:active {
+    background: var(--text);
+    color: var(--bg);
 }
 
 .detail__gallery {
@@ -479,12 +528,13 @@ body {
 }
 
 .detail__name {
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 700;
     margin-bottom: 10px;
     text-transform: uppercase;
     letter-spacing: var(--letter-spacing);
     line-height: 1.4;
+    color: var(--text);
 }
 
 .detail__price-block {
@@ -527,7 +577,7 @@ body {
 .detail__variant-btn {
     padding: 8px 16px;
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: 6px;
     background: none;
     color: var(--text);
     font-size: 12px;
@@ -639,7 +689,7 @@ body {
 .cart-item__qty-btn {
     width: 28px;
     height: 28px;
-    border-radius: var(--radius);
+    border-radius: 6px;
     border: 1px solid var(--border);
     background: none;
     color: var(--text);
@@ -762,7 +812,7 @@ body {
     width: 100%;
     padding: 12px 14px;
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: 6px;
     background: var(--bg);
     color: var(--text);
     font-size: 14px;
@@ -879,7 +929,7 @@ select.form-input {
     background: var(--text);
     color: var(--bg);
     padding: 10px 28px;
-    border-radius: var(--radius);
+    border-radius: 6px;
     font-size: 13px;
     font-weight: 600;
     z-index: 1000;
@@ -923,8 +973,8 @@ select.form-input {
     animation: shimmer 1.2s linear infinite;
 }
 .skeleton-card__info {
-    padding: 10px 8px 16px;
-    text-align: center;
+    padding: 12px 10px 4px;
+    text-align: left;
 }
 .skeleton-card__line {
     height: 12px;
@@ -932,7 +982,7 @@ select.form-input {
     background: linear-gradient(110deg, #f0f0f0 8%, #e0e0e0 18%, #f0f0f0 33%);
     background-size: 200% 100%;
     animation: shimmer 1.2s linear infinite;
-    margin: 0 auto 8px;
+    margin: 0 0 8px;
 }
 .skeleton-card__line--title {
     width: 75%;
@@ -940,6 +990,20 @@ select.form-input {
 .skeleton-card__line--price {
     width: 40%;
     height: 14px;
+}
+.skeleton-card__buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 10px 12px;
+}
+.skeleton-card__btn {
+    width: 100%;
+    height: 36px;
+    border-radius: 6px;
+    background: linear-gradient(110deg, #f0f0f0 8%, #e0e0e0 18%, #f0f0f0 33%);
+    background-size: 200% 100%;
+    animation: shimmer 1.2s linear infinite;
 }
 @keyframes shimmer {
     0% { background-position: 200% 0; }

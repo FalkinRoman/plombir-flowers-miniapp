@@ -244,6 +244,10 @@ function showSkeletons(count = 4) {
                 <div class="skeleton-card__line skeleton-card__line--title"></div>
                 <div class="skeleton-card__line skeleton-card__line--price"></div>
             </div>
+            <div class="skeleton-card__buttons">
+                <div class="skeleton-card__btn"></div>
+                <div class="skeleton-card__btn"></div>
+            </div>
         `;
         $products.appendChild(sk);
     }
@@ -372,8 +376,22 @@ function _renderCards(items) {
                 <div class="product-card__name">${p.name}</div>
                 <div class="product-card__price">${priceHtml}</div>
             </div>
+            <div class="product-card__buttons">
+                <button class="product-card__btn product-card__btn--detail" data-id="${p.id}">Подробнее</button>
+                <button class="product-card__btn product-card__btn--cart" data-id="${p.id}">В корзину</button>
+            </div>
         `;
         $products.appendChild(card);
+
+        // Button handlers (stop propagation so card click doesn't fire)
+        card.querySelector('.product-card__btn--detail').addEventListener('click', (e) => {
+            e.stopPropagation();
+            openProduct(p.id);
+        });
+        card.querySelector('.product-card__btn--cart').addEventListener('click', (e) => {
+            e.stopPropagation();
+            addToCartFromCard(p, e.currentTarget);
+        });
 
         // Image fade-in on load
         const img = card.querySelector('.product-card__img');
@@ -528,6 +546,36 @@ function addCurrentToCart() {
     }
 
     // Haptic feedback in Telegram
+    if (tg && tg.HapticFeedback) {
+        tg.HapticFeedback.impactOccurred('light');
+    }
+
+    showToast('Добавлено в корзину');
+}
+
+// Quick add-to-cart from product card
+function addToCartFromCard(product, btnEl) {
+    const item = {
+        product_id: product.id,
+        variant_id: null,
+        name: product.name,
+        variant_label: null,
+        price: product.price,
+        quantity: 1,
+        picture: product.picture || null,
+    };
+    addToCart(item);
+
+    // Visual feedback on button
+    if (btnEl) {
+        btnEl.classList.add('btn-added');
+        btnEl.textContent = '✓ Добавлено';
+        setTimeout(() => {
+            btnEl.classList.remove('btn-added');
+            btnEl.textContent = 'В корзину';
+        }, 1200);
+    }
+
     if (tg && tg.HapticFeedback) {
         tg.HapticFeedback.impactOccurred('light');
     }
