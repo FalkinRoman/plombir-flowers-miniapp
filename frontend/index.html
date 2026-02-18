@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Plombir Flowers</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="/app/static/styles.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="header__logo">🌸 Plombir Flowers</div>
+        </header>
+
+        <!-- Categories -->
+        <nav class="categories" id="categories">
+            <button class="category-btn active" data-id="">Все</button>
+        </nav>
+
+        <!-- Search -->
+        <div class="search-bar">
+            <input type="text" id="search" placeholder="Поиск букетов..." />
+        </div>
+
+        <!-- Products grid -->
+        <div class="products" id="products"></div>
+
+        <!-- Load more -->
+        <div class="load-more" id="load-more" style="display:none;">
+            <button class="btn-load-more" id="btn-load-more">Показать ещё</button>
+        </div>
+
+        <!-- Loading -->
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+        </div>
+
+        <!-- Product detail modal -->
+        <div class="modal" id="modal">
+            <div class="modal__content" id="modal-content"></div>
+        </div>
+    </div>
+
+    <script src="/app/static/app.js"></script>
+</body>
+</html>
