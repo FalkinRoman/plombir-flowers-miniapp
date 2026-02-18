@@ -358,9 +358,7 @@ function _renderCards(items) {
         if (p.old_price) {
             priceHtml += `<span class="product-card__price--old">${formatPrice(p.old_price)}</span>`;
         }
-        if (p.price_max && p.price_max !== p.price) {
-            priceHtml += `<span class="product-card__price--range"> – ${formatPrice(p.price_max)}</span>`;
-        }
+        // Диапазон цен на карточке не показываем — только минимальная
 
         // Badge (discount or "ХИТ" style)
         let badgeHtml = '';

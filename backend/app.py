@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Optional, List
 
-from backend.config import YML_REFRESH_INTERVAL, BOT_TOKEN, ADMIN_CHAT_ID
+from backend.config import YML_REFRESH_INTERVAL, BOT_TOKEN, ADMIN_CHAT_ID, LOW_PRIORITY_CATEGORIES
 from backend.parser import fetch_and_parse
 from backend.orders import init_db, create_order, get_order, get_orders_by_user
 
@@ -31,8 +31,12 @@ async def refresh_feed():
         data = await fetch_and_parse()
         _cache["categories"] = data["categories"]
         products = data["products"]
-        random.shuffle(products)
-        _cache["products"] = products
+        # Разделяем: основные цветы сверху, винтаж/вазы/подарки — в конце
+        main = [p for p in products if p["category_id"] not in LOW_PRIORITY_CATEGORIES]
+        low = [p for p in products if p["category_id"] in LOW_PRIORITY_CATEGORIES]
+        random.shuffle(main)
+        random.shuffle(low)
+        _cache["products"] = main + low
         _cache["loaded"] = True
         _cache["last_update"] = datetime.datetime.now().isoformat()
         print(f"✅ Фид обновлён: {len(data['categories'])} категорий, {len(data['products'])} товаров")

@@ -8,11 +8,13 @@ from backend.config import HOST, PORT, BOT_TOKEN
 
 
 def run_bot():
-    """Запускает бота в отдельном потоке."""
-    if not BOT_TOKEN or BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
+    """Запускает бота в отдельном потоке (с собственным event loop)."""
+    if not BOT_TOKEN or BOT_TOKEN == "YOUR_BOT_TOKEN_HERE" or BOT_TOKEN == "skip":
         print("⚠️  BOT_TOKEN не указан — бот не запущен")
         return
     try:
+        import asyncio
+        asyncio.set_event_loop(asyncio.new_event_loop())
         from bot.bot import create_bot
         print("🤖 Запускаю Telegram-бота...")
         app = create_bot()
