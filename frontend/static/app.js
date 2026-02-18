@@ -1,6 +1,7 @@
 /**
  * Plombir Flowers — Mini App (Sprint 2)
  * Каталог + Корзина + Оформление заказа + Фильтр цен
+ * Стилистика адаптирована под plombirflowers.ru
  */
 
 const API = '/api';
@@ -36,7 +37,6 @@ function saveCart(cart) {
 
 function addToCart(item) {
     const cart = getCart();
-    // Ключ: product_id + variant_id
     const key = item.variant_id ? `${item.product_id}_${item.variant_id}` : item.product_id;
     const existing = cart.find(c => {
         const k = c.variant_id ? `${c.product_id}_${c.variant_id}` : c.product_id;
@@ -90,6 +90,9 @@ const tg = window.Telegram?.WebApp;
 if (tg) {
     tg.ready();
     tg.expand();
+    // Ставим цвета хедера под стиль Mini App
+    tg.setHeaderColor('#ffffff');
+    tg.setBackgroundColor('#ffffff');
 }
 
 // ── Navigation ──
@@ -241,7 +244,7 @@ function renderProducts(items, reset) {
     if (reset) $products.innerHTML = '';
 
     if (state.products.length === 0) {
-        $products.innerHTML = '<div class="empty">Ничего не найдено 😔</div>';
+        $products.innerHTML = '<div class="empty">Ничего не найдено</div>';
         return;
     }
 
@@ -250,6 +253,7 @@ function renderProducts(items, reset) {
         card.className = 'product-card';
         card.onclick = () => openProduct(p.id);
 
+        // Price
         let priceHtml = formatPrice(p.price);
         if (p.old_price) {
             priceHtml += `<span class="product-card__price--old">${formatPrice(p.old_price)}</span>`;
@@ -258,6 +262,7 @@ function renderProducts(items, reset) {
             priceHtml += `<span class="product-card__price--range"> – ${formatPrice(p.price_max)}</span>`;
         }
 
+        // Badge (discount or "ХИТ" style)
         let badgeHtml = '';
         if (p.old_price) {
             const discount = Math.round((1 - p.price / p.old_price) * 100);
@@ -265,9 +270,9 @@ function renderProducts(items, reset) {
         }
 
         card.innerHTML = `
+            ${badgeHtml}
             <img class="product-card__img" src="${p.picture || ''}" alt="${p.name}" loading="lazy" />
             <div class="product-card__info">
-                ${badgeHtml}
                 <div class="product-card__name">${p.name}</div>
                 <div class="product-card__price">${priceHtml}</div>
             </div>
@@ -350,6 +355,9 @@ function renderProductScreen(p) {
                 <button class="btn-primary detail__add-to-cart" onclick="addCurrentToCart()">
                     В корзину
                 </button>
+                <button class="btn-secondary" onclick="showScreen('catalog')" style="margin-top:8px;">
+                    Подробнее на сайте
+                </button>
                 ${p.description ? `<div class="detail__desc">${p.description}</div>` : ''}
             </div>
         </div>
@@ -393,7 +401,7 @@ function addCurrentToCart() {
     };
 
     addToCart(item);
-    showToast('Добавлено в корзину ✓');
+    showToast('Добавлено в корзину');
 }
 
 function setupDetailGallery() {
@@ -425,8 +433,10 @@ function renderCartScreen() {
                     <button class="detail__back" onclick="showScreen('catalog')">← Назад</button>
                     <h2 class="cart__title">Корзина</h2>
                 </div>
-                <div class="empty">Корзина пуста 🛒</div>
-                <button class="btn-secondary cart__continue" onclick="showScreen('catalog')">Перейти в каталог</button>
+                <div class="empty">Корзина пуста</div>
+                <div style="padding:0 16px;">
+                    <button class="btn-secondary" onclick="showScreen('catalog')">Перейти в каталог</button>
+                </div>
             </div>
         `;
         return;
@@ -462,10 +472,10 @@ function renderCartScreen() {
             <div class="cart__items">${itemsHtml}</div>
             <div class="cart__footer">
                 <div class="cart__total">
-                    <span>Итого:</span>
+                    <span>Итого</span>
                     <span class="cart__total-price">${formatPrice(getCartTotal())}</span>
                 </div>
-                <button class="btn-primary cart__checkout" onclick="openOrderForm()">Оформить заказ</button>
+                <button class="btn-primary" onclick="openOrderForm()">Оформить заказ</button>
                 <button class="btn-secondary cart__continue" onclick="showScreen('catalog')">Продолжить покупки</button>
             </div>
         </div>
@@ -502,8 +512,10 @@ function openOrderForm() {
             </div>
 
             <form id="order-form" onsubmit="submitOrder(event)">
+                <div class="form-section-title">Ваши данные</div>
+
                 <div class="form-group">
-                    <label class="form-label">Ваше имя *</label>
+                    <label class="form-label">Имя *</label>
                     <input class="form-input" type="text" name="customer_name" required placeholder="Как к вам обращаться?" />
                 </div>
 
@@ -512,6 +524,8 @@ function openOrderForm() {
                     <input class="form-input" type="tel" name="customer_phone" required placeholder="+7 (___) ___-__-__" />
                 </div>
 
+                <div class="form-section-title">Доставка</div>
+
                 <div class="form-group">
                     <label class="form-label">Адрес доставки</label>
                     <input class="form-input" type="text" name="delivery_address" placeholder="Улица, дом, квартира" />
@@ -519,7 +533,7 @@ function openOrderForm() {
 
                 <div class="form-row">
                     <div class="form-group form-group--half">
-                        <label class="form-label">Дата доставки</label>
+                        <label class="form-label">Дата</label>
                         <input class="form-input" type="date" name="delivery_date" min="${minDate}" />
                     </div>
                     <div class="form-group form-group--half">
@@ -534,19 +548,21 @@ function openOrderForm() {
                     </div>
                 </div>
 
+                <div class="form-section-title">Дополнительно</div>
+
                 <div class="form-group">
-                    <label class="form-label">Текст открытки 💌</label>
+                    <label class="form-label">Текст открытки</label>
                     <textarea class="form-input form-textarea" name="card_text" placeholder="Напишите пожелание для получателя..." rows="3"></textarea>
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">Комментарий к заказу</label>
+                    <label class="form-label">Комментарий</label>
                     <textarea class="form-input form-textarea" name="comment" placeholder="Особые пожелания, домофон, этаж..." rows="2"></textarea>
                 </div>
 
                 <!-- Сводка заказа -->
                 <div class="order-summary">
-                    <div class="order-summary__title">Ваш заказ:</div>
+                    <div class="order-summary__title">Ваш заказ</div>
                     ${cart.map(item => `
                         <div class="order-summary__item">
                             <span>${item.name}${item.variant_label ? ` (${item.variant_label})` : ''} × ${item.quantity}</span>
@@ -554,7 +570,7 @@ function openOrderForm() {
                         </div>
                     `).join('')}
                     <div class="order-summary__total">
-                        <span>Итого:</span>
+                        <span>Итого</span>
                         <span>${formatPrice(getCartTotal())}</span>
                     </div>
                 </div>
@@ -639,8 +655,8 @@ async function submitOrder(e) {
 function showOrderSuccess(orderId) {
     $screenSuccess.innerHTML = `
         <div class="success">
-            <div class="success__icon">✅</div>
-            <h2 class="success__title">Заказ оформлен!</h2>
+            <div class="success__icon">✓</div>
+            <h2 class="success__title">Заказ оформлен</h2>
             <p class="success__text">Номер заказа: <strong>#${orderId}</strong></p>
             <p class="success__text">Мы свяжемся с вами для подтверждения.</p>
             <button class="btn-primary success__btn" onclick="showScreen('catalog')">Вернуться в каталог</button>
