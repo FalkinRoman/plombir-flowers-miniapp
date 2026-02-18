@@ -12,35 +12,58 @@
         <!-- Header -->
         <header class="header">
             <div class="header__logo">🌸 Plombir Flowers</div>
+            <button class="header__cart" id="btn-cart" onclick="openCart()">
+                🛒 <span class="header__cart-badge" id="cart-badge" style="display:none;">0</span>
+            </button>
         </header>
 
-        <!-- Categories -->
-        <nav class="categories" id="categories">
-            <button class="category-btn active" data-id="">Все</button>
-        </nav>
+        <!-- ===== CATALOG SCREEN ===== -->
+        <div class="screen" id="screen-catalog">
+            <!-- Categories -->
+            <nav class="categories" id="categories">
+                <button class="category-btn active" data-id="">Все</button>
+            </nav>
 
-        <!-- Search -->
-        <div class="search-bar">
-            <input type="text" id="search" placeholder="Поиск букетов..." />
+            <!-- Price filter -->
+            <div class="price-filter" id="price-filter">
+                <button class="price-btn active" data-min="" data-max="">Любая цена</button>
+                <button class="price-btn" data-min="0" data-max="6000">до 6 000</button>
+                <button class="price-btn" data-min="6000" data-max="10000">6–10 тыс</button>
+                <button class="price-btn" data-min="10000" data-max="15000">10–15 тыс</button>
+                <button class="price-btn" data-min="15000" data-max="25000">15–25 тыс</button>
+                <button class="price-btn" data-min="25000" data-max="">от 25 000</button>
+            </div>
+
+            <!-- Search -->
+            <div class="search-bar">
+                <input type="text" id="search" placeholder="Поиск букетов..." />
+            </div>
+
+            <!-- Products grid -->
+            <div class="products" id="products"></div>
+
+            <!-- Load more -->
+            <div class="load-more" id="load-more" style="display:none;">
+                <button class="btn-load-more" id="btn-load-more">Показать ещё</button>
+            </div>
+
+            <!-- Loading -->
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+            </div>
         </div>
 
-        <!-- Products grid -->
-        <div class="products" id="products"></div>
+        <!-- ===== PRODUCT DETAIL SCREEN ===== -->
+        <div class="screen" id="screen-product" style="display:none;"></div>
 
-        <!-- Load more -->
-        <div class="load-more" id="load-more" style="display:none;">
-            <button class="btn-load-more" id="btn-load-more">Показать ещё</button>
-        </div>
+        <!-- ===== CART SCREEN ===== -->
+        <div class="screen" id="screen-cart" style="display:none;"></div>
 
-        <!-- Loading -->
-        <div class="loading" id="loading">
-            <div class="spinner"></div>
-        </div>
+        <!-- ===== ORDER FORM SCREEN ===== -->
+        <div class="screen" id="screen-order" style="display:none;"></div>
 
-        <!-- Product detail modal -->
-        <div class="modal" id="modal">
-            <div class="modal__content" id="modal-content"></div>
-        </div>
+        <!-- ===== ORDER SUCCESS SCREEN ===== -->
+        <div class="screen" id="screen-success" style="display:none;"></div>
     </div>
 
     <script src="/app/static/app.js"></script>

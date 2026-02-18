@@ -9,6 +9,7 @@ YML_REFRESH_INTERVAL = int(os.getenv("YML_REFRESH_INTERVAL", "3600"))
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8000"))
 WEBAPP_URL = os.getenv("WEBAPP_URL", "http://localhost:8000/app")
+ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", "")  # Telegram chat_id админа для уведомлений
 
 # Категории, которые показываем в каталоге Mini App
 # Если пусто — показываем все, кроме скрытых

@@ -1,9 +1,8 @@
 """
 Telegram Bot для Plombir Flowers.
 Команды: /start, /help, /menu
-Кнопка открытия Mini App.
+Кнопка открытия Mini App + callback-обработка.
 """
-import asyncio
 from telegram import (
     Update,
     InlineKeyboardButton,
@@ -14,6 +13,7 @@ from telegram import (
 from telegram.ext import (
     Application,
     CommandHandler,
+    CallbackQueryHandler,
     ContextTypes,
 )
 from backend.config import BOT_TOKEN, WEBAPP_URL
@@ -76,6 +76,36 @@ async def cmd_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+# ── Callback-обработка ──
+
+async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка нажатий inline-кнопок."""
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "contacts":
+        await query.message.reply_text(
+            "📍 *Plombir Flowers*\n\n"
+            "🏠 ул. Кирочная, 8Б, Санкт-Петербург\n"
+            "🕐 Каждый день с 8:30 до 22:00\n"
+            "📞 +7 981 967-28-33\n"
+            "📧 info@plombirflowers.ru\n"
+            "🌐 plombirflowers.ru\n\n"
+            "💐 Мы делаем букеты с любовью!",
+            parse_mode="Markdown",
+        )
+
+    elif query.data == "my_orders":
+        await query.message.reply_text(
+            "📦 *Мои заказы*\n\n"
+            "Для просмотра заказов откройте каталог и перейдите в корзину.\n"
+            "История заказов будет доступна в ближайшем обновлении! 🚀",
+            parse_mode="Markdown",
+        )
+
+
+# ── Настройка ──
+
 async def setup_menu_button(app: Application):
     """Устанавливаем кнопку Mini App в меню бота."""
     await app.bot.set_chat_menu_button(
@@ -94,6 +124,9 @@ def create_bot() -> Application:
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("menu", cmd_menu))
+
+    # Callback-кнопки
+    app.add_handler(CallbackQueryHandler(callback_handler))
 
     # Устанавливаем кнопку меню после запуска
     app.post_init = setup_menu_button

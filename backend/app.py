@@ -6,11 +6,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-from typing import Optional
+from pydantic import BaseModel
+from typing import Optional, List
 
-from backend.config import YML_REFRESH_INTERVAL
+from backend.config import YML_REFRESH_INTERVAL, BOT_TOKEN, ADMIN_CHAT_ID
 from backend.parser import fetch_and_parse
+from backend.orders import init_db, create_order, get_order, get_orders_by_user
 
 
 # ── Кэш данных ──
@@ -46,6 +47,7 @@ async def scheduler():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
+    init_db()
     await refresh_feed()
     task = asyncio.create_task(scheduler())
     yield
@@ -63,6 +65,32 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ── Pydantic модели ──
+
+class OrderItem(BaseModel):
+    product_id: str
+    variant_id: Optional[str] = None
+    name: str
+    variant_label: Optional[str] = None
+    price: float
+    quantity: int
+    picture: Optional[str] = None
+
+
+class OrderCreate(BaseModel):
+    telegram_user_id: Optional[str] = ""
+    telegram_username: Optional[str] = ""
+    customer_name: str
+    customer_phone: str
+    delivery_address: Optional[str] = ""
+    delivery_date: Optional[str] = ""
+    delivery_time: Optional[str] = ""
+    comment: Optional[str] = ""
+    card_text: Optional[str] = ""
+    items: List[OrderItem]
+    total: float
 
 
 # ── API endpoints ──
@@ -92,7 +120,6 @@ async def reload_feed():
 @app.get("/api/categories")
 async def get_categories():
     """Список категорий для каталога."""
-    # Возвращаем только те, где есть товары
     product_cats = set(p["category_id"] for p in _cache["products"])
     return [c for c in _cache["categories"] if c["id"] in product_cats]
 
@@ -124,7 +151,6 @@ async def get_products(
 
     total = len(items)
 
-    # Для списка — отдаём урезанную версию (без description_html, без вариантов)
     result = []
     for p in items[offset: offset + limit]:
         result.append({
@@ -149,6 +175,91 @@ async def get_product(product_id: str):
         if p["id"] == product_id:
             return p
     raise HTTPException(status_code=404, detail="Товар не найден")
+
+
+# ── Заказы ──
+
+@app.post("/api/orders")
+async def create_new_order(order: OrderCreate):
+    """Создать заказ."""
+    if not order.items:
+        raise HTTPException(status_code=400, detail="Корзина пуста")
+
+    order_data = order.model_dump()
+    # Сериализуем items в list[dict]
+    order_data["items"] = [item.model_dump() for item in order.items]
+
+    result = create_order(order_data)
+
+    # Отправляем уведомление админу
+    asyncio.create_task(_notify_admin(result))
+
+    return {"ok": True, "order_id": result["id"]}
+
+
+@app.get("/api/orders/{order_id}")
+async def get_order_endpoint(order_id: int):
+    """Получить заказ по id."""
+    order = get_order(order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Заказ не найден")
+    return order
+
+
+@app.get("/api/user-orders/{telegram_user_id}")
+async def get_user_orders(telegram_user_id: str):
+    """Получить заказы пользователя."""
+    return get_orders_by_user(telegram_user_id)
+
+
+async def _notify_admin(order: dict):
+    """Отправляем уведомление о заказе админу через Telegram Bot API."""
+    if not BOT_TOKEN or not ADMIN_CHAT_ID:
+        print("⚠️ BOT_TOKEN или ADMIN_CHAT_ID не указан — уведомление не отправлено")
+        return
+
+    import httpx
+
+    items_text = ""
+    for item in order["items"]:
+        line = f"  • {item['name']}"
+        if item.get("variant_label"):
+            line += f" ({item['variant_label']})"
+        line += f" × {item['quantity']} — {int(item['price'] * item['quantity'])} ₽"
+        items_text += line + "\n"
+
+    text = (
+        f"🆕 *Новый заказ #{order['id']}*\n\n"
+        f"👤 {order['customer_name']}\n"
+        f"📞 {order['customer_phone']}\n"
+    )
+    if order.get("delivery_address"):
+        text += f"📍 {order['delivery_address']}\n"
+    if order.get("delivery_date"):
+        text += f"📅 {order['delivery_date']}"
+        if order.get("delivery_time"):
+            text += f" {order['delivery_time']}"
+        text += "\n"
+    if order.get("card_text"):
+        text += f"💌 Открытка: {order['card_text']}\n"
+    if order.get("comment"):
+        text += f"💬 {order['comment']}\n"
+
+    text += f"\n📦 *Товары:*\n{items_text}\n💰 *Итого: {int(order['total'])} ₽*"
+
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                json={
+                    "chat_id": ADMIN_CHAT_ID,
+                    "text": text,
+                    "parse_mode": "Markdown",
+                },
+            )
+            print(f"✅ Уведомление отправлено: заказ #{order['id']}")
+    except Exception as e:
+        print(f"⚠️ Ошибка отправки уведомления: {e}")
 
 
 # ── Mini App (статика) ──
