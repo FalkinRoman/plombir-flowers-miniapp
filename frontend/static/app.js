@@ -77,9 +77,23 @@ function getCartCount() {
 function updateCartBadge() {
     const count = getCartCount();
     const $badge = document.getElementById('cart-badge');
+    const $cartBtn = document.getElementById('btn-cart');
     if (count > 0) {
+        const changed = $badge.textContent !== String(count);
         $badge.textContent = count;
         $badge.style.display = 'flex';
+        // Bounce animation
+        if (changed) {
+            $badge.classList.remove('bounce');
+            $cartBtn.classList.remove('pulse');
+            void $badge.offsetWidth; // reflow trick
+            $badge.classList.add('bounce');
+            $cartBtn.classList.add('pulse');
+            setTimeout(() => {
+                $badge.classList.remove('bounce');
+                $cartBtn.classList.remove('pulse');
+            }, 500);
+        }
     } else {
         $badge.style.display = 'none';
     }
@@ -95,10 +109,25 @@ if (tg) {
     tg.setBackgroundColor('#ffffff');
 }
 
+// ── Header scroll shadow ──
+const $header = document.querySelector('.header');
+window.addEventListener('scroll', () => {
+    if (window.scrollY > 10) {
+        $header.classList.add('header--scrolled');
+    } else {
+        $header.classList.remove('header--scrolled');
+    }
+}, { passive: true });
+
 // ── Navigation ──
 function showScreen(name) {
-    document.querySelectorAll('.screen').forEach(s => s.style.display = 'none');
-    document.getElementById(`screen-${name}`).style.display = 'block';
+    document.querySelectorAll('.screen').forEach(s => {
+        s.style.display = 'none';
+        s.classList.remove('screen-enter');
+    });
+    const target = document.getElementById(`screen-${name}`);
+    target.style.display = 'block';
+    target.classList.add('screen-enter');
     state.currentScreen = name;
 
     // Telegram back button
@@ -143,10 +172,8 @@ const $screenSuccess = document.getElementById('screen-success');
 
 // ── Init ──
 async function init() {
-    showLoading(true);
     await loadCategories();
     await loadProducts(true);
-    showLoading(false);
     updateCartBadge();
     setupPriceFilter();
 }
@@ -196,6 +223,26 @@ function setupPriceFilter() {
     });
 }
 
+// ── Skeleton cards ──
+function showSkeletons(count = 4) {
+    for (let i = 0; i < count; i++) {
+        const sk = document.createElement('div');
+        sk.className = 'skeleton-card';
+        sk.innerHTML = `
+            <div class="skeleton-card__img"></div>
+            <div class="skeleton-card__info">
+                <div class="skeleton-card__line skeleton-card__line--title"></div>
+                <div class="skeleton-card__line skeleton-card__line--price"></div>
+            </div>
+        `;
+        $products.appendChild(sk);
+    }
+}
+
+function removeSkeletons() {
+    $products.querySelectorAll('.skeleton-card').forEach(sk => sk.remove());
+}
+
 // ── Products ──
 async function loadProducts(reset = false) {
     if (state.loading) return;
@@ -206,7 +253,14 @@ async function loadProducts(reset = false) {
         $products.innerHTML = '';
     }
 
-    showLoading(true);
+    // Показываем скелетоны
+    if (reset) {
+        showSkeletons(LIMIT);
+    } else {
+        // Скрываем кнопку «Загрузить ещё» и показываем скелетоны внизу грида
+        $loadMore.style.display = 'none';
+        showSkeletons(LIMIT);
+    }
 
     try {
         const params = new URLSearchParams({
@@ -218,7 +272,11 @@ async function loadProducts(reset = false) {
         if (state.priceMax !== null) params.set('price_max', state.priceMax);
         if (state.search) params.set('search', state.search);
 
-        const res = await fetch(`${API}/products?${params}`);
+        // Запрос + минимальная задержка, чтобы скелетоны были видны
+        const [res] = await Promise.all([
+            fetch(`${API}/products?${params}`),
+            new Promise(r => setTimeout(r, 800)),
+        ]);
         const data = await res.json();
 
         state.total = data.total;
@@ -230,10 +288,12 @@ async function loadProducts(reset = false) {
             state.products = [...state.products, ...data.items];
         }
 
+        removeSkeletons();
         renderProducts(data.items, reset);
         updateLoadMore();
     } catch (e) {
         console.error('Ошибка загрузки товаров:', e);
+        removeSkeletons();
     }
 
     state.loading = false;
@@ -241,16 +301,25 @@ async function loadProducts(reset = false) {
 }
 
 function renderProducts(items, reset) {
-    if (reset) $products.innerHTML = '';
+    if (reset) {
+        $products.innerHTML = '';
+    }
+    _renderCards(items);
+}
 
+function _renderCards(items) {
     if (state.products.length === 0) {
         $products.innerHTML = '<div class="empty">Ничего не найдено</div>';
         return;
     }
 
-    for (const p of items) {
+    const startIdx = $products.children.length;
+
+    for (let i = 0; i < items.length; i++) {
+        const p = items[i];
         const card = document.createElement('div');
-        card.className = 'product-card';
+        card.className = 'product-card animate-in';
+        card.style.setProperty('--appear-delay', `${(startIdx + i) * 0.05}s`);
         card.onclick = () => openProduct(p.id);
 
         // Price
@@ -278,6 +347,15 @@ function renderProducts(items, reset) {
             </div>
         `;
         $products.appendChild(card);
+
+        // Image fade-in on load
+        const img = card.querySelector('.product-card__img');
+        if (img.complete) {
+            img.classList.add('loaded');
+        } else {
+            img.addEventListener('load', () => img.classList.add('loaded'));
+            img.addEventListener('error', () => img.classList.add('loaded'));
+        }
     }
 }
 
@@ -365,6 +443,15 @@ function renderProductScreen(p) {
 
     // Gallery scroll dots
     setupDetailGallery();
+
+    // Image fade-in for gallery
+    $screenProduct.querySelectorAll('.detail__gallery img').forEach(img => {
+        if (img.complete) img.classList.add('loaded');
+        else {
+            img.addEventListener('load', () => img.classList.add('loaded'));
+            img.addEventListener('error', () => img.classList.add('loaded'));
+        }
+    });
 }
 
 function selectVariant(index) {
@@ -401,6 +488,23 @@ function addCurrentToCart() {
     };
 
     addToCart(item);
+
+    // Button visual feedback
+    const btn = document.querySelector('.detail__add-to-cart');
+    if (btn) {
+        btn.classList.add('btn-added');
+        btn.textContent = '✓ Добавлено';
+        setTimeout(() => {
+            btn.classList.remove('btn-added');
+            btn.textContent = 'В корзину';
+        }, 1200);
+    }
+
+    // Haptic feedback in Telegram
+    if (tg && tg.HapticFeedback) {
+        tg.HapticFeedback.impactOccurred('light');
+    }
+
     showToast('Добавлено в корзину');
 }
 
@@ -480,14 +584,22 @@ function renderCartScreen() {
             </div>
         </div>
     `;
+
+    // Image fade-in for cart items
+    $screenCart.querySelectorAll('.cart-item__img').forEach(img => {
+        if (img.complete) img.classList.add('loaded');
+        else img.addEventListener('load', () => img.classList.add('loaded'));
+    });
 }
 
 function changeQty(index, delta) {
+    if (tg && tg.HapticFeedback) tg.HapticFeedback.selectionChanged();
     updateCartQuantity(index, delta);
     renderCartScreen();
 }
 
 function removeItem(index) {
+    if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
     removeFromCart(index);
     renderCartScreen();
 }

@@ -9,14 +9,20 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:ital,opsz,wght@0,6..12,300;0,6..12,400;0,6..12,500;0,6..12,600;0,6..12,700;0,6..12,800;1,6..12,300;1,6..12,400&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/app/static/styles.css">
+    <link rel="stylesheet" href="/app/static/styles.css?v=4">
 </head>
 <body>
     <div id="app">
         <!-- Header -->
         <header class="header">
             <div style="width:32px;"></div>
-            <div class="header__logo">PLOMBIR <span class="header__logo-accent">flowers</span></div>
+            <div class="header__logo" id="header-logo">
+                <div class="header__logo-wrap">
+                    <img src="/app/static/img/IMG_0415.PNG.webp" alt="Plombir Flowers"
+                         onerror="this.style.display='none'; this.parentElement.nextElementSibling.style.display='inline';" />
+                </div>
+                <span style="display:none;">PLOMBIR <span class="header__logo-accent">flowers</span></span>
+            </div>
             <button class="header__cart" id="btn-cart" onclick="openCart()">
                 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                     <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" stroke-linecap="round" stroke-linejoin="round"/>
@@ -76,6 +82,6 @@
         <div class="screen" id="screen-success" style="display:none;"></div>
     </div>
 
-    <script src="/app/static/app.js"></script>
+    <script src="/app/static/app.js?v=4"></script>
 </body>
 </html>

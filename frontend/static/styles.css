@@ -16,8 +16,8 @@
     --btn-outline-border: #000000;
     --danger: #e53935;
     --success: #43a047;
-    --radius: 2px;
-    --radius-sm: 2px;
+    --radius: 20px;
+    --radius-sm: 16px;
     --font: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     --letter-spacing: 0.08em;
     --letter-spacing-sm: 0.04em;
@@ -47,6 +47,10 @@ body {
     justify-content: space-between;
     align-items: center;
     border-bottom: none;
+    transition: box-shadow 0.3s ease;
+}
+.header.header--scrolled {
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
 }
 
 .header__logo {
@@ -55,6 +59,24 @@ body {
     letter-spacing: var(--letter-spacing-sm);
     text-align: center;
     flex: 1;
+}
+
+.header__logo-wrap {
+    width: 140px;
+    height: 44px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto;
+}
+
+.header__logo img {
+    height: auto;
+    width: 200px;
+    max-width: none;
+    display: block;
+    object-fit: contain;
 }
 
 .header__logo-accent {
@@ -153,7 +175,7 @@ body {
 
 .price-btn {
     flex-shrink: 0;
-    padding: 5px 10px;
+    padding: 6px 14px;
     border: 1px solid var(--border);
     border-radius: var(--radius);
     background: none;
@@ -168,9 +190,8 @@ body {
 }
 .price-btn.active {
     border-color: var(--text);
-    color: var(--text);
-    background: var(--text);
     color: var(--btn-dark-text);
+    background: var(--text);
 }
 
 /* ══════════════════════════════════════════════
@@ -183,8 +204,8 @@ body {
     width: 100%;
     padding: 10px 14px;
     border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--bg);
+    border-radius: var(--radius-sm);
+    background: var(--secondary-bg);
     color: var(--text);
     font-size: 14px;
     outline: none;
@@ -206,8 +227,8 @@ body {
 .products {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 2px;
-    padding: 0;
+    gap: 6px;
+    padding: 0 6px;
 }
 
 /* ══════════════════════════════════════════════
@@ -216,7 +237,8 @@ body {
    ══════════════════════════════════════════════ */
 .product-card {
     background: var(--bg);
-    border-radius: 0;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
     overflow: hidden;
     cursor: pointer;
     transition: opacity 0.2s;
@@ -298,7 +320,7 @@ body {
 }
 .btn-load-more {
     padding: 12px 40px;
-    border: 1px solid var(--text);
+    border: 1px solid var(--border);
     border-radius: var(--radius);
     background: none;
     color: var(--text);
@@ -313,6 +335,21 @@ body {
 .btn-load-more:active {
     background: var(--text);
     color: var(--bg);
+}
+.btn-load-more.loading-spinner {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+.spinner-small {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(0,0,0,0.2);
+    border-top-color: var(--text);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    vertical-align: middle;
 }
 
 /* ══════════════════════════════════════════════
@@ -364,7 +401,7 @@ body {
     display: block;
     width: 100%;
     padding: 12px 24px;
-    border: 1px solid var(--text);
+    border: 1px solid var(--border);
     border-radius: var(--radius);
     background: none;
     color: var(--text);
@@ -866,6 +903,47 @@ select.form-input {
     color: var(--hint);
     font-size: 14px;
     letter-spacing: 0.02em;
+    grid-column: 1 / -1;
+}
+
+/* ══════════════════════════════════════════════
+   SKELETON CARDS
+   ══════════════════════════════════════════════ */
+.skeleton-card {
+    background: var(--bg);
+    overflow: hidden;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+}
+.skeleton-card__img {
+    width: 100%;
+    aspect-ratio: 3 / 4;
+    background: linear-gradient(110deg, #f0f0f0 8%, #e0e0e0 18%, #f0f0f0 33%);
+    background-size: 200% 100%;
+    animation: shimmer 1.2s linear infinite;
+}
+.skeleton-card__info {
+    padding: 10px 8px 16px;
+    text-align: center;
+}
+.skeleton-card__line {
+    height: 12px;
+    border-radius: 6px;
+    background: linear-gradient(110deg, #f0f0f0 8%, #e0e0e0 18%, #f0f0f0 33%);
+    background-size: 200% 100%;
+    animation: shimmer 1.2s linear infinite;
+    margin: 0 auto 8px;
+}
+.skeleton-card__line--title {
+    width: 75%;
+}
+.skeleton-card__line--price {
+    width: 40%;
+    height: 14px;
+}
+@keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
 }
 
 /* ══════════════════════════════════════════════
@@ -875,4 +953,208 @@ select.form-input {
     height: 1px;
     background: var(--border);
     margin: 0 16px;
+}
+
+/* ══════════════════════════════════════════════
+   ANIMATIONS
+   ══════════════════════════════════════════════ */
+
+/* ── Keyframes ── */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(100%);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes badgeBounce {
+    0%   { transform: scale(1); }
+    30%  { transform: scale(1.5); }
+    50%  { transform: scale(0.85); }
+    70%  { transform: scale(1.15); }
+    100% { transform: scale(1); }
+}
+
+@keyframes cartPulse {
+    0%   { transform: scale(1); }
+    50%  { transform: scale(1.15); }
+    100% { transform: scale(1); }
+}
+
+@keyframes successPop {
+    0%   { opacity: 0; transform: scale(0.5); }
+    60%  { opacity: 1; transform: scale(1.1); }
+    100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes shimmer {
+    0%   { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+
+/* ── Product card staggered appear ── */
+.product-card.animate-in {
+    opacity: 0;
+    animation: fadeInUp 0.4s ease forwards;
+    animation-delay: var(--appear-delay, 0s);
+}
+
+/* ── Image fade-in on load ── */
+.product-card__img,
+.cart-item__img,
+.detail__gallery img {
+    opacity: 0;
+    transition: opacity 0.4s ease;
+}
+.product-card__img.loaded,
+.cart-item__img.loaded,
+.detail__gallery img.loaded {
+    opacity: 1;
+}
+
+/* ── Screen transitions ── */
+#screen-product {
+    animation: slideUp 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+#screen-cart.screen-enter,
+#screen-order.screen-enter,
+#screen-success.screen-enter {
+    animation: fadeIn 0.3s ease;
+}
+
+/* ── Detail body content appear ── */
+.detail__body {
+    animation: fadeInUp 0.4s ease 0.15s both;
+}
+
+/* ── Cart badge bounce ── */
+.header__cart-badge.bounce {
+    animation: badgeBounce 0.4s ease;
+}
+
+/* ── Cart icon pulse on add ── */
+.header__cart.pulse {
+    animation: cartPulse 0.3s ease;
+}
+
+/* cart items — no animation, instant render */
+
+/* ── Add to cart button feedback ── */
+.btn-primary.btn-added {
+    background: var(--success);
+    transition: background 0.2s ease;
+}
+
+/* ── Success screen icon pop ── */
+.success__icon {
+    animation: successPop 0.5s cubic-bezier(0.17, 0.67, 0.29, 1.27) 0.1s both;
+}
+.success__title {
+    animation: fadeInUp 0.4s ease 0.3s both;
+}
+.success__text {
+    animation: fadeInUp 0.4s ease 0.4s both;
+}
+.success__btn {
+    animation: fadeInUp 0.4s ease 0.5s both;
+}
+
+/* ── Category/price filter — smooth switch fade ── */
+.products.fade-out {
+    opacity: 0.3;
+    transition: opacity 0.15s ease;
+}
+.products.fade-in {
+    opacity: 1;
+    transition: opacity 0.2s ease;
+}
+
+/* ── Skeleton / placeholder while loading ── */
+.product-card__img-skeleton {
+    width: 100%;
+    aspect-ratio: 3 / 4;
+    background: linear-gradient(90deg, var(--secondary-bg) 25%, #efefef 50%, var(--secondary-bg) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+}
+
+/* ── Load more button hover + spinner ── */
+.btn-load-more {
+    transition: all 0.25s ease;
+}
+.btn-load-more:hover {
+    background: var(--text);
+    color: var(--bg);
+}
+.btn-load-more:disabled {
+    opacity: 0.6;
+    cursor: wait;
+}
+
+.btn-spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    vertical-align: middle;
+    margin-right: 6px;
+}
+
+/* ── Variant button transition ── */
+.detail__variant-btn {
+    transition: all 0.2s ease;
+}
+
+/* ── Form input focus transition ── */
+.form-input {
+    transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+.form-input:focus {
+    border-color: var(--text);
+    box-shadow: 0 0 0 1px var(--text);
+}
+
+/* ── Cart qty change animation ── */
+.cart-item__qty.changed {
+    animation: badgeBounce 0.3s ease;
+}
+
+/* ── Smooth scrollbar for categories ── */
+.categories, .price-filter {
+    scroll-behavior: smooth;
 }
