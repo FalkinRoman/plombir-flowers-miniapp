@@ -206,6 +206,11 @@ function onCategoryClick(btn) {
     btn.classList.add('active');
     state.categoryId = btn.dataset.id;
     state.offset = 0;
+    // Сбрасываем поиск при выборе категории
+    if (state.search) {
+        state.search = '';
+        $search.value = '';
+    }
     loadProducts(true);
 }
 
@@ -218,6 +223,11 @@ function setupPriceFilter() {
             state.priceMin = btn.dataset.min ? parseFloat(btn.dataset.min) : null;
             state.priceMax = btn.dataset.max ? parseFloat(btn.dataset.max) : null;
             state.offset = 0;
+            // Сбрасываем поиск при выборе цены
+            if (state.search) {
+                state.search = '';
+                $search.value = '';
+            }
             loadProducts(true);
         });
     });
@@ -244,8 +254,18 @@ function removeSkeletons() {
 }
 
 // ── Products ──
+let _loadAbort = null;   // AbortController для отмены предыдущего запроса
+
 async function loadProducts(reset = false) {
-    if (state.loading) return;
+    // Отменяем предыдущий запрос, если он ещё в полёте
+    if (_loadAbort) {
+        _loadAbort.abort();
+        _loadAbort = null;
+    }
+
+    const abort = new AbortController();
+    _loadAbort = abort;
+
     state.loading = true;
 
     if (reset) {
@@ -257,7 +277,6 @@ async function loadProducts(reset = false) {
     if (reset) {
         showSkeletons(LIMIT);
     } else {
-        // Скрываем кнопку «Загрузить ещё» и показываем скелетоны внизу грида
         $loadMore.style.display = 'none';
         showSkeletons(LIMIT);
     }
@@ -274,9 +293,13 @@ async function loadProducts(reset = false) {
 
         // Запрос + минимальная задержка, чтобы скелетоны были видны
         const [res] = await Promise.all([
-            fetch(`${API}/products?${params}`),
+            fetch(`${API}/products?${params}`, { signal: abort.signal }),
             new Promise(r => setTimeout(r, 800)),
         ]);
+
+        // Если пока ждали ответ — пришёл новый запрос, не рендерим устаревшие данные
+        if (abort.signal.aborted) return;
+
         const data = await res.json();
 
         state.total = data.total;
@@ -292,12 +315,16 @@ async function loadProducts(reset = false) {
         renderProducts(data.items, reset);
         updateLoadMore();
     } catch (e) {
+        if (e.name === 'AbortError') return;   // отменили — норм
         console.error('Ошибка загрузки товаров:', e);
         removeSkeletons();
+    } finally {
+        if (_loadAbort === abort) {
+            state.loading = false;
+            _loadAbort = null;
+        }
+        showLoading(false);
     }
-
-    state.loading = false;
-    showLoading(false);
 }
 
 function renderProducts(items, reset) {
@@ -799,7 +826,21 @@ let searchTimeout;
 $search.addEventListener('input', (e) => {
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => {
-        state.search = e.target.value.trim();
+        const q = e.target.value.trim();
+        state.search = q;
+        // При поиске сбрасываем категорию и ценовой фильтр
+        if (q) {
+            state.categoryId = '';
+            state.priceMin = null;
+            state.priceMax = null;
+            // Визуально сбрасываем активные кнопки
+            $categories.querySelectorAll('.category-btn').forEach(b => b.classList.remove('active'));
+            const allBtn = $categories.querySelector('[data-id=""]');
+            if (allBtn) allBtn.classList.add('active');
+            document.querySelectorAll('.price-btn').forEach(b => b.classList.remove('active'));
+            const allPriceBtn = document.querySelector('.price-btn[data-min=""]');
+            if (allPriceBtn) allPriceBtn.classList.add('active');
+        }
         loadProducts(true);
     }, 400);
 });

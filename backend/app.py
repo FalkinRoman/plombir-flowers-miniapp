@@ -146,8 +146,55 @@ async def get_products(
         items = [p for p in items if p["price"] and p["price"] <= price_max]
 
     if search:
-        q = search.lower()
-        items = [p for p in items if q in (p["name"] or "").lower()]
+        q = search.lower().strip()
+
+        # Базовый стемминг: обрезаем типичные русские окончания для нечёткого поиска
+        _RU_SUFFIXES = ("ами", "ями", "ов", "ев", "ей", "ой", "ий", "ый", "ах", "ях",
+                        "ом", "ем", "ые", "ие", "ых", "их", "ую", "юю", "ая", "яя",
+                        "ы", "и", "а", "я", "у", "ю", "е", "о")
+
+        def _stem(word):
+            if len(word) <= 3:
+                return word
+            for suf in _RU_SUFFIXES:
+                if word.endswith(suf) and len(word) - len(suf) >= 2:
+                    return word[:-len(suf)]
+            return word
+
+        q_stem = _stem(q)
+        queries = list({q, q_stem})  # оригинал + стем
+
+        def _text_matches(text, qs):
+            """Проверяет совпадение любого из вариантов запроса."""
+            t = text.lower()
+            return any(qq in t for qq in qs)
+
+        def _relevance(p):
+            """0 = нет, 3 = имя начинается, 2 = имя содержит, 1 = описание/варианты."""
+            name_lower = (p["name"] or "").lower()
+            # Проверяем оба варианта (точный + стем)
+            for qq in queries:
+                if name_lower.startswith(qq):
+                    return 3
+            for qq in queries:
+                if qq in name_lower:
+                    return 2
+            # Ищем в описании
+            if _text_matches(p.get("description") or "", queries):
+                return 1
+            if _text_matches(p.get("description_html") or "", queries):
+                return 1
+            # Ищем в метках вариантов
+            for v in p.get("variants", []):
+                if _text_matches(v.get("label") or "", queries):
+                    return 1
+                for val in v.get("params", {}).values():
+                    if _text_matches(val or "", queries):
+                        return 1
+            return 0
+
+        scored = [(p, _relevance(p)) for p in items]
+        items = [p for p, r in sorted(scored, key=lambda x: -x[1]) if r > 0]
 
     total = len(items)
 
