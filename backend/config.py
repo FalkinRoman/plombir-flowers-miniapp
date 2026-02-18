@@ -33,6 +33,13 @@ LOW_PRIORITY_CATEGORIES = {
     "894097284241",   # Вазы и подарки
 }
 
+# Tilda Store API — для получения мультикатегорийного маппинга (partuids)
+TILDA_STORE_API = "https://store.tildaapi.com/api/getproductslist/"
+# "Все" мета-категория — через неё получаем все товары из API
+TILDA_STORE_ALL_UID = "177224816201"
+# recid — ID записи магазина на сайте (первый store-блок)
+TILDA_STORE_RECID = "662301126"
+
 # Шаблонный текст, который вырезаем из описаний
 BOILERPLATE_TEXTS = [
     "Важно!\nКаждый наш букет уникален. Мы не повторяем букеты 1 в 1.",

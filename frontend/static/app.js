@@ -475,9 +475,6 @@ function renderProductScreen(p) {
                 <button class="btn-primary detail__add-to-cart" onclick="addCurrentToCart()">
                     В корзину
                 </button>
-                <button class="btn-secondary" onclick="showScreen('catalog')" style="margin-top:8px;">
-                    Подробнее на сайте
-                </button>
                 ${p.description ? `<div class="detail__desc">${p.description}</div>` : ''}
             </div>
         </div>
@@ -712,21 +709,19 @@ function openOrderForm() {
                     <input class="form-input" type="text" name="delivery_address" placeholder="Улица, дом, квартира" />
                 </div>
 
-                <div class="form-row">
-                    <div class="form-group form-group--half">
-                        <label class="form-label">Дата</label>
-                        <input class="form-input" type="date" name="delivery_date" min="${minDate}" />
-                    </div>
-                    <div class="form-group form-group--half">
-                        <label class="form-label">Время</label>
-                        <select class="form-input" name="delivery_time">
-                            <option value="">Любое</option>
-                            <option value="09:00–12:00">09:00–12:00</option>
-                            <option value="12:00–15:00">12:00–15:00</option>
-                            <option value="15:00–18:00">15:00–18:00</option>
-                            <option value="18:00–21:00">18:00–21:00</option>
-                        </select>
-                    </div>
+                <div class="form-group">
+                    <label class="form-label">Дата</label>
+                    <input class="form-input" type="date" name="delivery_date" min="${minDate}" placeholder="Выберите дату" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Время</label>
+                    <select class="form-input" name="delivery_time">
+                        <option value="">Любое</option>
+                        <option value="09:00–12:00">09:00–12:00</option>
+                        <option value="12:00–15:00">12:00–15:00</option>
+                        <option value="15:00–18:00">15:00–18:00</option>
+                        <option value="18:00–21:00">18:00–21:00</option>
+                    </select>
                 </div>
 
                 <div class="form-section-title">Дополнительно</div>

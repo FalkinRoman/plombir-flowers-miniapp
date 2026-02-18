@@ -32,8 +32,13 @@ async def refresh_feed():
         _cache["categories"] = data["categories"]
         products = data["products"]
         # Разделяем: основные цветы сверху, винтаж/вазы/подарки — в конце
-        main = [p for p in products if p["category_id"] not in LOW_PRIORITY_CATEGORIES]
-        low = [p for p in products if p["category_id"] in LOW_PRIORITY_CATEGORIES]
+        # Товар считается low-priority, если ВСЕ его category_ids — low-priority
+        def _is_low_priority(p):
+            cats = p.get("category_ids", [p["category_id"]])
+            return all(c in LOW_PRIORITY_CATEGORIES for c in cats)
+
+        main = [p for p in products if not _is_low_priority(p)]
+        low = [p for p in products if _is_low_priority(p)]
         random.shuffle(main)
         random.shuffle(low)
         _cache["products"] = main + low
@@ -127,7 +132,10 @@ async def reload_feed():
 @app.get("/api/categories")
 async def get_categories():
     """Список категорий для каталога."""
-    product_cats = set(p["category_id"] for p in _cache["products"])
+    product_cats = set()
+    for p in _cache["products"]:
+        for cid in p.get("category_ids", [p["category_id"]]):
+            product_cats.add(cid)
     return [c for c in _cache["categories"] if c["id"] in product_cats]
 
 
@@ -144,7 +152,7 @@ async def get_products(
     items = _cache["products"]
 
     if category_id:
-        items = [p for p in items if p["category_id"] == category_id]
+        items = [p for p in items if category_id in p.get("category_ids", [p["category_id"]])]
 
     if price_min is not None:
         items = [p for p in items if p["price"] and p["price"] >= price_min]
@@ -214,6 +222,7 @@ async def get_products(
             "price_max": p.get("price_max"),
             "old_price": p["old_price"],
             "category_id": p["category_id"],
+            "category_ids": p.get("category_ids", [p["category_id"]]),
             "picture": p["pictures"][0] if p["pictures"] else None,
             "count": p["count"],
             "has_variants": len(p["variants"]) > 0,

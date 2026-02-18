@@ -243,6 +243,8 @@ body {
     cursor: pointer;
     transition: opacity 0.2s;
     position: relative;
+    display: flex;
+    flex-direction: column;
 }
 .product-card:active {
     opacity: 0.85;
@@ -318,6 +320,7 @@ body {
     flex-direction: column;
     gap: 6px;
     padding: 10px 10px 16px;
+    margin-top: auto;
 }
 .product-card__btn {
     display: block;
@@ -831,27 +834,7 @@ input[type="time"].form-input {
     appearance: auto;
 }
 
-/* Фикс даты/времени на iPhone — компактнее, не налазит */
-.form-row {
-    display: flex;
-    gap: 8px;
-}
-
-.form-group--half {
-    flex: 1 1 0;
-    min-width: 0;
-}
-
-.form-group--half .form-input {
-    font-size: 13px;
-    padding: 10px 8px;
-    width: 100%;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-/* iOS date input fix — убираем лишнюю ширину */
+/* iOS date input — нормальная высота */
 input[type="date"].form-input {
     min-height: 44px;
 }
@@ -860,24 +843,37 @@ select.form-input {
     min-height: 44px;
 }
 
-/* Placeholder видимость на iOS */
-.form-input::placeholder,
-.form-textarea::placeholder {
+/* ── Placeholder видимость на iOS ── */
+.form-input::placeholder {
     color: var(--hint);
-    opacity: 1; /* iOS по умолчанию ставит opacity < 1 */
+    opacity: 1;
     -webkit-text-fill-color: var(--hint);
 }
 
-/* Фикс -webkit-text-fill-color для обычного текста */
-.form-input {
+.form-textarea::placeholder {
+    color: var(--hint);
+    opacity: 1;
+    -webkit-text-fill-color: var(--hint);
+}
+
+/*
+ * iOS Safari: -webkit-text-fill-color переопределяет color,
+ * поэтому нужно явно задавать его для всех состояний.
+ * НЕ ставим -webkit-text-fill-color на .form-input глобально —
+ * это убивает placeholder.
+ */
+.form-input:not(:placeholder-shown),
+.form-textarea:not(:placeholder-shown) {
     -webkit-text-fill-color: var(--text);
 }
 
-.form-input:placeholder-shown {
+.form-input:placeholder-shown,
+.form-textarea:placeholder-shown {
     -webkit-text-fill-color: var(--hint);
 }
 
-.form-input:not(:placeholder-shown) {
+/* Для select — всегда нормальный цвет текста */
+select.form-input {
     -webkit-text-fill-color: var(--text);
 }
 
