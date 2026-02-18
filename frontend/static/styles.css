@@ -834,6 +834,13 @@ select.form-input {
     cursor: pointer;
 }
 
+/* Восстанавливаем нативный date/time picker на iOS */
+input[type="date"].form-input,
+input[type="time"].form-input {
+    -webkit-appearance: auto;
+    appearance: auto;
+}
+
 /* ══ Order Summary ══ */
 .order-summary {
     background: var(--secondary-bg);
