@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Optional, List
 
-from backend.config import YML_REFRESH_INTERVAL, BOT_TOKEN, ADMIN_CHAT_ID, LOW_PRIORITY_CATEGORIES
+from backend.config import YML_REFRESH_INTERVAL, BOT_TOKEN, ADMIN_CHAT_ID, LOW_PRIORITY_CATEGORIES, CATEGORY_ORDER
 from backend.parser import fetch_and_parse
 from backend.orders import init_db, create_order, get_order, get_orders_by_user
 
@@ -129,14 +129,40 @@ async def reload_feed():
     }
 
 
+@app.get("/api/debug/categories")
+async def debug_categories():
+    """Дебаг: количество товаров по каждой категории."""
+    cat_counts: dict[str, int] = {}
+    for p in _cache["products"]:
+        for cid in p.get("category_ids", [p["category_id"]]):
+            cat_counts[cid] = cat_counts.get(cid, 0) + 1
+
+    cat_names = {c["id"]: c["name"] for c in _cache["categories"]}
+    result = []
+    for cid, count in sorted(cat_counts.items(), key=lambda x: -x[1]):
+        result.append({
+            "id": cid,
+            "name": cat_names.get(cid, f"(неизвестна: {cid})"),
+            "products_count": count,
+        })
+    return result
+
+
 @app.get("/api/categories")
 async def get_categories():
-    """Список категорий для каталога."""
+    """Список категорий для каталога (в заданном порядке)."""
     product_cats = set()
     for p in _cache["products"]:
         for cid in p.get("category_ids", [p["category_id"]]):
             product_cats.add(cid)
-    return [c for c in _cache["categories"] if c["id"] in product_cats]
+    visible = [c for c in _cache["categories"] if c["id"] in product_cats]
+
+    # Сортируем по CATEGORY_ORDER; новые/неизвестные категории — в конец
+    order_map = {cid: i for i, cid in enumerate(CATEGORY_ORDER)}
+    fallback = len(CATEGORY_ORDER)
+    visible.sort(key=lambda c: order_map.get(c["id"], fallback))
+
+    return visible
 
 
 @app.get("/api/products")

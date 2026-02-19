@@ -190,11 +190,18 @@ async function loadCategories() {
 }
 
 function renderCategories() {
-    let html = `<button class="category-btn active" data-id="">Все</button>`;
-    for (const cat of state.categories) {
-        html += `<button class="category-btn" data-id="${cat.id}">${cat.name}</button>`;
+    let html = '';
+    for (let i = 0; i < state.categories.length; i++) {
+        const cat = state.categories[i];
+        const isActive = i === 0 ? ' active' : '';
+        html += `<button class="category-btn${isActive}" data-id="${cat.id}">${cat.name}</button>`;
     }
     $categories.innerHTML = html;
+
+    // Выбираем первую категорию по умолчанию
+    if (state.categories.length && !state.categoryId) {
+        state.categoryId = state.categories[0].id;
+    }
 
     $categories.querySelectorAll('.category-btn').forEach(btn => {
         btn.addEventListener('click', () => onCategoryClick(btn));

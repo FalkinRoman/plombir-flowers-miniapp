@@ -152,13 +152,10 @@ async def fetch_and_parse() -> dict:
             "name": (cat.text or "").strip(),
         })
 
-    # --- Товары (сырые) ---
+    # --- Товары (сырые) — загружаем ВСЕ, фильтрация по категориям позже ---
     raw_offers = []
     for offer in shop.findall(".//offers/offer"):
         cat_id = _text(offer, "categoryId")
-        # Пропускаем товары из скрытых категорий
-        if cat_id in HIDDEN_CATEGORIES:
-            continue
 
         raw = {
             "id": offer.get("id"),
@@ -201,7 +198,22 @@ async def fetch_and_parse() -> dict:
         for product in products:
             product["category_ids"] = [product["category_id"]]
 
-    return {"categories": categories, "products": products}
+    # --- Фильтрация скрытых категорий ---
+    # Убираем скрытые category_ids, оставляем только видимые
+    filtered_products = []
+    for product in products:
+        visible_cats = [c for c in product["category_ids"] if c not in HIDDEN_CATEGORIES]
+        if visible_cats:
+            product["category_ids"] = visible_cats
+            # Обновляем primary category_id если он был скрытым
+            if product["category_id"] in HIDDEN_CATEGORIES:
+                product["category_id"] = visible_cats[0]
+            filtered_products.append(product)
+    
+    print(f"📊 После фильтрации: {len(filtered_products)} из {len(products)} товаров "
+          f"(убрано {len(products) - len(filtered_products)} без видимых категорий)")
+
+    return {"categories": categories, "products": filtered_products}
 
 
 def _group_variants(raw_offers: list) -> list:
