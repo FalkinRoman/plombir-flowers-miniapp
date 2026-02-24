@@ -2,6 +2,7 @@
 FastAPI приложение — API для Telegram Mini App «Plombir Flowers».
 """
 import asyncio
+from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,6 +13,7 @@ from typing import Optional, List
 from backend.config import YML_REFRESH_INTERVAL, BOT_TOKEN, ADMIN_CHAT_ID, LOW_PRIORITY_CATEGORIES, CATEGORY_ORDER
 from backend.parser import fetch_and_parse
 from backend.orders import init_db, create_order, get_order, get_orders_by_user
+from backend.ui_content import ensure_ui_storage, get_ui_content
 
 
 # ── Кэш данных ──
@@ -60,6 +62,7 @@ async def scheduler():
 async def lifespan(app: FastAPI):
     # Startup
     init_db()
+    ensure_ui_storage()
     await refresh_feed()
     task = asyncio.create_task(scheduler())
     yield
@@ -301,6 +304,12 @@ async def get_user_orders(telegram_user_id: str):
     return get_orders_by_user(telegram_user_id)
 
 
+@app.get("/api/ui-content")
+async def get_ui_content_endpoint():
+    """Получить контент для верхнего слайдера и бегущей строки."""
+    return get_ui_content()
+
+
 async def _notify_admin(order: dict):
     """Отправляем уведомление о заказе админу через Telegram Bot API."""
     if not BOT_TOKEN or not ADMIN_CHAT_ID:
@@ -353,7 +362,14 @@ async def _notify_admin(order: dict):
 
 # ── Mini App (статика) ──
 
-app.mount("/app", StaticFiles(directory="frontend", html=True), name="frontend")
+_ROOT_DIR = Path(__file__).resolve().parent.parent
+_BANNERS_DIR = _ROOT_DIR / "data" / "banners"
+_FRONTEND_DIR = _ROOT_DIR / "frontend"
+
+_BANNERS_DIR.mkdir(parents=True, exist_ok=True)
+
+app.mount("/media/banners", StaticFiles(directory=str(_BANNERS_DIR)), name="media-banners")
+app.mount("/app", StaticFiles(directory=str(_FRONTEND_DIR), html=True), name="frontend")
 
 
 @app.get("/")

@@ -1,7 +1,16 @@
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+_ROOT_DIR = Path(__file__).resolve().parent.parent
+_DOTENV_PATH = _ROOT_DIR / ".env"
+
+try:
+    if _DOTENV_PATH.exists():
+        load_dotenv(dotenv_path=_DOTENV_PATH)
+except PermissionError:
+    # Не валим приложение, если macOS/TCC не дает читать .env.
+    pass
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 YML_FEED_URL = os.getenv("YML_FEED_URL", "")

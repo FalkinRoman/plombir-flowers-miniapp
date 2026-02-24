@@ -18,9 +18,19 @@ let state = {
     priceMax: null,
     search: '',
     loading: false,
-    currentScreen: 'catalog',  // catalog | product | cart | order | success
+    currentScreen: 'catalog',  // catalog | product | cart | order | success | info
     currentProduct: null,
     selectedVariant: null,
+    infoPage: 'about',         // about | contacts | payment | delivery
+    uiContent: {
+        ticker_items: [],
+        banners: [],
+    },
+    heroIndex: 0,
+    heroTimer: null,
+    heroRenderKey: '',
+    initialBootLoading: true,
+    initialProductsPending: null,
 };
 
 // ── Cart (localStorage) ──
@@ -121,6 +131,7 @@ window.addEventListener('scroll', () => {
 
 // ── Navigation ──
 function showScreen(name) {
+    closeMenu();
     document.querySelectorAll('.screen').forEach(s => {
         s.style.display = 'none';
         s.classList.remove('screen-enter');
@@ -150,6 +161,7 @@ function goBack() {
     else if (state.currentScreen === 'cart') showScreen('catalog');
     else if (state.currentScreen === 'order') showScreen('cart');
     else if (state.currentScreen === 'success') showScreen('catalog');
+    else if (state.currentScreen === 'info') showScreen('catalog');
     else showScreen('catalog');
 }
 
@@ -169,13 +181,231 @@ const $screenProduct = document.getElementById('screen-product');
 const $screenCart = document.getElementById('screen-cart');
 const $screenOrder = document.getElementById('screen-order');
 const $screenSuccess = document.getElementById('screen-success');
+const $screenInfo = document.getElementById('screen-info');
+const $heroTrack = document.getElementById('hero-track');
+const $heroDots = document.getElementById('hero-dots');
+const $tickerInner = document.getElementById('ticker-inner');
 
 // ── Init ──
 async function init() {
+    await loadUiContent();
+    renderTicker();
+    renderHeroSlider();
+    startHeroAutoplay();
     await loadCategories();
     await loadProducts(true);
     updateCartBadge();
     setupPriceFilter();
+}
+
+// ══════════════════════════════════════════════
+// ══ SIDE MENU
+// ══════════════════════════════════════════════
+function openMenu() {
+    const menu = document.getElementById('side-menu');
+    const overlay = document.getElementById('side-menu-overlay');
+    if (!menu || !overlay) return;
+    menu.classList.add('side-menu--open');
+    overlay.classList.add('side-menu-overlay--open');
+    document.body.classList.add('menu-open');
+}
+
+function closeMenu() {
+    const menu = document.getElementById('side-menu');
+    const overlay = document.getElementById('side-menu-overlay');
+    if (!menu || !overlay) return;
+    menu.classList.remove('side-menu--open');
+    overlay.classList.remove('side-menu-overlay--open');
+    document.body.classList.remove('menu-open');
+}
+
+function menuOpenCatalog() {
+    closeMenu();
+    showScreen('catalog');
+}
+
+function menuOpenInfo(page) {
+    closeMenu();
+    openInfoPage(page);
+}
+
+// ── UI Content (hero + ticker) ──
+async function loadUiContent() {
+    try {
+        const res = await fetch(`${API}/ui-content`);
+        if (!res.ok) throw new Error('ui-content failed');
+        state.uiContent = await res.json();
+    } catch (e) {
+        state.uiContent = {
+            ticker_items: [
+                'БЕСПЛАТНАЯ ДОСТАВКА ОТ 10 000 ₽ В ПРЕДЕЛАХ КАД',
+            ],
+            banners: [],
+        };
+    }
+}
+
+function getEffectiveBanners() {
+    if (Array.isArray(state.uiContent.banners) && state.uiContent.banners.length) {
+        return state.uiContent.banners;
+    }
+    return [{
+        id: 'placeholder',
+        title: '',
+        subtitle: '',
+        target: 'catalog',
+        image_url: '',
+    }];
+}
+
+function handleBannerTarget(target) {
+    const t = (target || 'catalog').trim();
+    if (!t || t === 'catalog') {
+        showScreen('catalog');
+        return;
+    }
+    if (t === 'about' || t === 'contacts' || t === 'payment' || t === 'delivery') {
+        openInfoPage(t);
+        return;
+    }
+    if (/^https?:\/\//i.test(t)) {
+        window.open(t, '_blank', 'noopener,noreferrer');
+    }
+}
+
+function renderHeroSlider() {
+    if (!$heroTrack || !$heroDots) return;
+    const banners = getEffectiveBanners();
+    if (!banners.length) {
+        $heroTrack.innerHTML = '';
+        $heroDots.innerHTML = '';
+        state.heroRenderKey = '';
+        return;
+    }
+
+    if (state.heroIndex >= banners.length) state.heroIndex = 0;
+    const key = [
+        banners.map((b) => `${b.id}|${b.image_url}|${b.title}|${b.subtitle}|${b.target}`).join('||'),
+        state.initialBootLoading ? 'boot' : 'ready',
+    ].join('::');
+    if (key !== state.heroRenderKey) {
+        $heroTrack.innerHTML = banners.map((b, idx) => `
+            <button
+                class="hero__slide${idx === state.heroIndex ? ' active' : ''} is-loading${b.image_url ? ' has-image' : ' is-placeholder'}"
+                data-target="${b.target || 'catalog'}"
+                style="--banner-placeholder:${getBannerPlaceholder(idx, b.id)}"
+                aria-label="Баннер ${idx + 1}"
+            >
+                ${b.image_url ? `<img class="hero__img" src="${b.image_url}" alt="" loading="lazy" />` : ''}
+            </button>
+        `).join('');
+
+        $heroDots.innerHTML = banners.map((_, idx) => `
+            <button class="hero__dot${idx === state.heroIndex ? ' active' : ''}" data-index="${idx}" aria-label="Слайд ${idx + 1}"></button>
+        `).join('');
+
+        $heroTrack.querySelectorAll('.hero__slide').forEach(slide => {
+            slide.addEventListener('click', () => handleBannerTarget(slide.dataset.target));
+            const img = slide.querySelector('.hero__img');
+            const loadingStartedAt = Date.now();
+            const finishLoading = () => {
+                const completeWhenReady = () => {
+                    if (state.initialBootLoading) {
+                        setTimeout(completeWhenReady, 40);
+                        return;
+                    }
+                    // Показываем skeleton минимум как у карточек, чтобы загрузка была визуально очевидной.
+                    const elapsed = Date.now() - loadingStartedAt;
+                    const minVisibleMs = 420;
+                    const delay = Math.max(0, minVisibleMs - elapsed);
+                    setTimeout(() => {
+                        slide.classList.remove('is-loading');
+                        slide.classList.add('loaded');
+                    }, delay);
+                };
+                completeWhenReady();
+            };
+            const failToPlaceholder = () => {
+                const completeWhenReady = () => {
+                    if (state.initialBootLoading) {
+                        setTimeout(completeWhenReady, 40);
+                        return;
+                    }
+                    slide.classList.remove('is-loading');
+                    slide.classList.remove('has-image');
+                    slide.classList.add('is-placeholder', 'loaded');
+                };
+                completeWhenReady();
+            };
+            if (!img) {
+                finishLoading();
+                return;
+            }
+            if (img.complete && img.naturalWidth > 0) {
+                finishLoading();
+            } else {
+                img.addEventListener('load', finishLoading, { once: true });
+                img.addEventListener('error', failToPlaceholder, { once: true });
+            }
+        });
+        $heroDots.querySelectorAll('.hero__dot').forEach(dot => {
+            dot.addEventListener('click', () => {
+                state.heroIndex = Number(dot.dataset.index);
+                updateHeroActiveState();
+                startHeroAutoplay();
+            });
+        });
+        state.heroRenderKey = key;
+    } else {
+        updateHeroActiveState();
+    }
+}
+
+function startHeroAutoplay() {
+    if (state.heroTimer) clearInterval(state.heroTimer);
+    const banners = getEffectiveBanners();
+    if (banners.length <= 1) return;
+    state.heroTimer = setInterval(() => {
+        state.heroIndex = (state.heroIndex + 1) % banners.length;
+        updateHeroActiveState();
+    }, 4500);
+}
+
+function renderTicker() {
+    if (!$tickerInner) return;
+    const promo = 'БЕСПЛАТНАЯ ДОСТАВКА ОТ 10 000 ₽ В ПРЕДЕЛАХ КАД';
+    const items = (state.uiContent.ticker_items || []).filter(Boolean);
+    const safeItems = items.length ? items : [promo];
+    const repeated = [];
+    const minCopies = 6;
+    for (let i = 0; i < minCopies; i++) {
+        for (const item of safeItems) repeated.push(item);
+    }
+    $tickerInner.innerHTML = repeated.map((text) => `<span class="ticker__item">${text}</span>`).join('');
+}
+
+function updateHeroActiveState() {
+    const slides = $heroTrack ? $heroTrack.querySelectorAll('.hero__slide') : [];
+    const dots = $heroDots ? $heroDots.querySelectorAll('.hero__dot') : [];
+    slides.forEach((slide, idx) => slide.classList.toggle('active', idx === state.heroIndex));
+    dots.forEach((dot, idx) => dot.classList.toggle('active', idx === state.heroIndex));
+}
+
+function getBannerPlaceholder(index, id) {
+    const palette = [
+        'linear-gradient(135deg, #efe6de 0%, #f8f2ec 100%)',
+        'linear-gradient(135deg, #efe8f0 0%, #f7f1f8 100%)',
+        'linear-gradient(135deg, #e8edf2 0%, #f3f6fa 100%)',
+        'linear-gradient(135deg, #f2ece4 0%, #fbf7f2 100%)',
+        'linear-gradient(135deg, #e8efea 0%, #f4faf6 100%)',
+    ];
+    const key = `${id || ''}${index}`;
+    let hash = 0;
+    for (let i = 0; i < key.length; i++) {
+        hash = ((hash << 5) - hash) + key.charCodeAt(i);
+        hash |= 0;
+    }
+    return palette[Math.abs(hash) % palette.length];
 }
 
 // ── Categories ──
@@ -322,17 +552,39 @@ async function loadProducts(reset = false) {
             state.products = [...state.products, ...data.items];
         }
 
-        removeSkeletons();
-        renderProducts(data.items, reset);
-        updateLoadMore();
+        if (state.initialBootLoading && reset) {
+            state.initialProductsPending = { items: data.items, reset };
+        } else {
+            removeSkeletons();
+            renderProducts(data.items, reset);
+            updateLoadMore();
+        }
     } catch (e) {
         if (e.name === 'AbortError') return;   // отменили — норм
         console.error('Ошибка загрузки товаров:', e);
-        removeSkeletons();
+        if (state.initialBootLoading && reset) {
+            state.total = 0;
+            state.offset = 0;
+            state.products = [];
+            state.initialProductsPending = { items: [], reset: true };
+        } else {
+            removeSkeletons();
+        }
     } finally {
         if (_loadAbort === abort) {
             state.loading = false;
             _loadAbort = null;
+        }
+        if (state.initialBootLoading) {
+            state.initialBootLoading = false;
+            state.heroRenderKey = '';
+            renderHeroSlider();
+            if (state.initialProductsPending) {
+                removeSkeletons();
+                renderProducts(state.initialProductsPending.items, state.initialProductsPending.reset);
+                updateLoadMore();
+                state.initialProductsPending = null;
+            }
         }
         showLoading(false);
     }
@@ -848,6 +1100,111 @@ function showOrderSuccess(orderId) {
     showScreen('success');
 }
 
+// ══════════════════════════════════════════════
+// ══ INFO PAGES
+// ══════════════════════════════════════════════
+function openInfoPage(page = 'about') {
+    state.infoPage = page;
+    renderInfoScreen(page);
+    showScreen('info');
+}
+
+function renderInfoScreen(page) {
+    const pages = {
+        about: {
+            title: 'О нас',
+            subtitle: 'Plombir Flowers - студия современной флористики в Санкт-Петербурге.',
+            cards: [
+                {
+                    title: 'Концепция',
+                    text: 'Мы собираем букеты в минималистичной эстетике: акцент на форму, фактуру и чистую палитру. Каждый заказ собирается вручную флористом.'
+                },
+                {
+                    title: 'Подход',
+                    text: 'Работаем с сезонным цветком, поэтому композиции всегда живые и актуальные. Можно оформить как быстрый заказ, так и индивидуальный запрос.'
+                },
+                {
+                    title: 'Город',
+                    text: 'Основная зона работы - Санкт-Петербург. На сайте и в мини-аппе доступен заказ с доставкой и согласованием времени.'
+                }
+            ]
+        },
+        contacts: {
+            title: 'Контакты',
+            subtitle: 'Связаться с нами можно любым удобным способом.',
+            cards: [
+                {
+                    title: 'Телефон',
+                    text: '<strong>+7 981 967-28-33</strong>'
+                },
+                {
+                    title: 'Email',
+                    text: '<strong>info@plombirflower.ru</strong>'
+                },
+                {
+                    title: 'Адрес',
+                    text: 'г. Санкт-Петербург, ул. Кирочная, 8Б'
+                }
+            ]
+        },
+        payment: {
+            title: 'Оплата',
+            subtitle: 'Все способы оплаты и порядок подтверждения заказа.',
+            cards: [
+                {
+                    title: 'Онлайн-оплата',
+                    text: 'Оплата проходит при оформлении заказа в Mini App. После оплаты заказ попадает в обработку.'
+                },
+                {
+                    title: 'Подтверждение',
+                    text: 'Менеджер связывается только если нужно уточнить состав, адрес или интервал.'
+                },
+                {
+                    title: 'Важно',
+                    text: 'Для срочных заказов рекомендуем указывать корректный телефон и комментарий для курьера.'
+                }
+            ]
+        },
+        delivery: {
+            title: 'Доставка',
+            subtitle: 'Условия доставки в стиле основного сайта.',
+            cards: [
+                {
+                    title: 'Бесплатно',
+                    text: 'Бесплатная доставка при заказе от <strong>10 000 ₽</strong> в пределах КАД. Возможна доставка в день заказа при наличии слота.'
+                },
+                {
+                    title: 'Интервалы',
+                    text: 'Стандартный 3-часовой интервал, ускоренный 1.5-часовой (коэффициент x1.5), доставка к точному времени (коэффициент x2).'
+                },
+                {
+                    title: 'Адрес и контакт',
+                    text: 'Проверьте адрес и телефон получателя перед отправкой — это сокращает время подтверждения и исключает переносы.'
+                }
+            ]
+        }
+    };
+
+    const content = pages[page] || pages.about;
+    $screenInfo.innerHTML = `
+        <div class="info-page">
+            <button class="detail__back" onclick="showScreen('catalog')">← Назад</button>
+            <div class="info-page__header">
+                <h2 class="info-page__title">${content.title}</h2>
+                <p class="info-page__subtitle">${content.subtitle}</p>
+            </div>
+            <div class="info-page__content">
+                ${content.cards.map(card => `
+                    <div class="info-card">
+                        <div class="info-card__title">${card.title}</div>
+                        <div class="info-card__text">${card.text}</div>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `;
+}
+
 // ── Toast ──
 function showToast(message) {
     const existing = document.querySelector('.toast');
@@ -911,6 +1268,10 @@ document.addEventListener('touchstart', (e) => {
         }
     }
 }, { passive: true });
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeMenu();
+});
 
 // ── Start ──
 init();

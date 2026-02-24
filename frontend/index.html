@@ -9,13 +9,18 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:ital,opsz,wght@0,6..12,300;0,6..12,400;0,6..12,500;0,6..12,600;0,6..12,700;0,6..12,800;1,6..12,300;1,6..12,400&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/app/static/styles.css?v=4">
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@4.2.0/fonts/remixicon.css" rel="stylesheet">
+    <link rel="stylesheet" href="/app/static/styles.css?v=12">
 </head>
 <body>
     <div id="app">
         <!-- Header -->
         <header class="header">
-            <div style="width:32px;"></div>
+            <button class="header__menu" id="btn-menu" onclick="openMenu()" aria-label="Открыть меню">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
             <div class="header__logo" id="header-logo">
                 <div class="header__logo-wrap">
                     <img src="/app/static/img/IMG_0415.PNG.webp" alt="Plombir Flowers"
@@ -35,6 +40,17 @@
 
         <!-- ===== CATALOG SCREEN ===== -->
         <div class="screen" id="screen-catalog">
+            <!-- Hero slider -->
+            <section class="hero" id="hero">
+                <div class="hero__track" id="hero-track"></div>
+                <div class="hero__dots" id="hero-dots"></div>
+            </section>
+
+            <!-- Delivery ticker -->
+            <section class="ticker" aria-label="Информация о доставке">
+                <div class="ticker__inner" id="ticker-inner"></div>
+            </section>
+
             <!-- Categories -->
             <nav class="categories" id="categories">
                 <button class="category-btn active" data-id="">Все</button>
@@ -80,8 +96,43 @@
 
         <!-- ===== ORDER SUCCESS SCREEN ===== -->
         <div class="screen" id="screen-success" style="display:none;"></div>
+
+        <!-- ===== INFO SCREEN ===== -->
+        <div class="screen" id="screen-info" style="display:none;"></div>
+
+        <!-- ===== SIDE MENU ===== -->
+        <div class="side-menu-overlay" id="side-menu-overlay" onclick="closeMenu()"></div>
+        <aside class="side-menu" id="side-menu" aria-label="Боковое меню">
+            <div class="side-menu__header">
+                <button class="side-menu__close side-menu__close--open" onclick="closeMenu()" aria-label="Закрыть меню">
+                    <span></span><span></span><span></span><span></span>
+                </button>
+            </div>
+            <nav class="side-menu__nav">
+                <button class="side-menu__link" onclick="menuOpenCatalog()">Каталог</button>
+                <button class="side-menu__link" onclick="menuOpenInfo('about')">О нас</button>
+                <button class="side-menu__link" onclick="menuOpenInfo('payment')">Оплата</button>
+                <button class="side-menu__link" onclick="menuOpenInfo('delivery')">Доставка</button>
+                <button class="side-menu__link" onclick="menuOpenInfo('contacts')">Контакты</button>
+            </nav>
+            <div class="side-menu__footer">
+                <div class="side-menu__socials">
+                    <a class="side-menu__icon-link" href="https://t.me/plombir_flowers" target="_blank" rel="noopener noreferrer" aria-label="Telegram">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M21.2 3.2a1 1 0 0 0-1.04-.16L2.9 10a1 1 0 0 0 .08 1.87l4.5 1.5 1.5 4.5a1 1 0 0 0 .72.66 1 1 0 0 0 .96-.26l2.53-2.57 3.98 2.95a1 1 0 0 0 1.57-.58L22 4.2a1 1 0 0 0-.8-1zM9.4 15.9l-.9-2.7 6.64-6.64-5.74 7.5z"/>
+                        </svg>
+                    </a>
+                    <a class="side-menu__icon-link" href="https://wa.me/79819672833" target="_blank" rel="noopener noreferrer" aria-label="WhatsApp">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M12 2a10 10 0 0 0-8.66 15l-1.2 4.34 4.45-1.17A10 10 0 1 0 12 2zm0 18a7.96 7.96 0 0 1-4.06-1.1l-.3-.18-2.64.7.71-2.58-.2-.31A8 8 0 1 1 12 20zm4.44-5.9c-.24-.12-1.4-.69-1.62-.77-.22-.08-.37-.12-.53.12-.16.24-.6.76-.74.91-.14.16-.28.18-.52.06-.24-.12-1.02-.38-1.95-1.22-.72-.64-1.2-1.44-1.34-1.68-.14-.24-.02-.37.1-.5.11-.11.24-.28.36-.42.12-.14.16-.24.24-.4.08-.16.04-.3-.02-.42-.06-.12-.53-1.28-.73-1.75-.19-.46-.39-.4-.53-.41h-.45a.86.86 0 0 0-.62.3c-.21.24-.82.8-.82 1.95 0 1.15.84 2.26.96 2.42.12.16 1.65 2.52 4 3.54.56.24 1 .39 1.34.5.56.18 1.06.16 1.46.1.45-.07 1.4-.57 1.6-1.12.2-.55.2-1.02.14-1.12-.06-.1-.22-.16-.46-.28z"/>
+                        </svg>
+                    </a>
+                </div>
+                <a class="side-menu__call" href="tel:+79819672833">Позвонить нам</a>
+            </div>
+        </aside>
     </div>
 
-    <script src="/app/static/app.js?v=4"></script>
+    <script src="/app/static/app.js?v=14"></script>
 </body>
 </html>
