@@ -68,8 +68,10 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/help — Эта справка\n\n"
         "📍 Адрес: ул. Кирочная, 8Б, Санкт-Петербург\n"
         "🕐 Работаем каждый день с 8:30 до 22:00\n"
-        "📞 +7 981 967-28-33\n"
-        "📧 info@plombirflowers.ru",
+        "📞 [ +7 981 967-28-33 ](tel:+79819672833)\n"
+        "📧 [info@plombirflowers.ru](mailto:info@plombirflowers.ru)\n"
+        "🌐 [plombirflowers.ru](https://plombirflowers.ru)\n"
+        "✈️ [Telegram](https://t.me/plombir_flowers) | [WhatsApp](https://wa.me/79819672833)",
         parse_mode="Markdown",
     )
 
@@ -267,11 +269,12 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data == "contacts":
         await query.message.reply_text(
             "📍 *Plombir Flowers*\n\n"
-            "🏠 ул. Кирочная, 8Б, Санкт-Петербург\n"
+            "🏠 [ул. Кирочная, 8Б, Санкт-Петербург](https://yandex.ru/maps/?text=%D0%A1%D0%9F%D0%B1%2C%20%D1%83%D0%BB.%20%D0%9A%D0%B8%D1%80%D0%BE%D1%87%D0%BD%D0%B0%D1%8F%2C%208%D0%91)\n"
             "🕐 Каждый день с 8:30 до 22:00\n"
-            "📞 +7 981 967-28-33\n"
-            "📧 info@plombirflowers.ru\n"
-            "🌐 plombirflowers.ru\n\n"
+            "📞 [ +7 981 967-28-33 ](tel:+79819672833)\n"
+            "📧 [info@plombirflowers.ru](mailto:info@plombirflowers.ru)\n"
+            "🌐 [plombirflowers.ru](https://plombirflowers.ru)\n"
+            "✈️ [Telegram](https://t.me/plombir_flowers) | [WhatsApp](https://wa.me/79819672833)\n\n"
             "💐 Мы делаем букеты с любовью!",
             parse_mode="Markdown",
         )

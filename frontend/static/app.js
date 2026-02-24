@@ -1135,15 +1135,23 @@ function renderInfoScreen(page) {
             cards: [
                 {
                     title: 'Телефон',
-                    text: '<strong>+7 981 967-28-33</strong>'
+                    text: '<a href="tel:+79819672833"><strong>+7 981 967-28-33</strong></a>'
                 },
                 {
                     title: 'Email',
-                    text: '<strong>info@plombirflower.ru</strong>'
+                    text: '<a href="mailto:info@plombirflowers.ru"><strong>info@plombirflowers.ru</strong></a>'
                 },
                 {
                     title: 'Адрес',
-                    text: 'г. Санкт-Петербург, ул. Кирочная, 8Б'
+                    text: '<a href="https://yandex.ru/maps/?text=%D0%A1%D0%9F%D0%B1%2C%20%D1%83%D0%BB.%20%D0%9A%D0%B8%D1%80%D0%BE%D1%87%D0%BD%D0%B0%D1%8F%2C%208%D0%91" target="_blank" rel="noopener noreferrer">г. Санкт-Петербург, ул. Кирочная, 8Б</a>'
+                },
+                {
+                    title: 'Сайт',
+                    text: '<a href="https://plombirflowers.ru" target="_blank" rel="noopener noreferrer">plombirflowers.ru</a>'
+                },
+                {
+                    title: 'Соцсети',
+                    text: '<a href="https://t.me/plombir_flowers" target="_blank" rel="noopener noreferrer">Telegram</a> · <a href="https://wa.me/79819672833" target="_blank" rel="noopener noreferrer">WhatsApp</a>'
                 }
             ]
         },
@@ -1188,7 +1196,6 @@ function renderInfoScreen(page) {
     const content = pages[page] || pages.about;
     $screenInfo.innerHTML = `
         <div class="info-page">
-            <button class="detail__back" onclick="showScreen('catalog')">← Назад</button>
             <div class="info-page__header">
                 <h2 class="info-page__title">${content.title}</h2>
                 <p class="info-page__subtitle">${content.subtitle}</p>
