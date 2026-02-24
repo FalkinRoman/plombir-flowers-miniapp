@@ -161,8 +161,8 @@ body {
 
 .hero__track {
     position: relative;
-    min-height: 220px;
-    height: 220px;
+    min-height: 0;
+    height: auto;
     overflow: hidden;
 }
 
@@ -235,6 +235,38 @@ body {
 .hero__dot.active {
     background: #151515;
     transform: scale(1.15);
+}
+
+.hero-swiper {
+    width: 100%;
+}
+
+.hero-swiper__slide {
+    width: 100%;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    display: block;
+    background: transparent;
+    cursor: pointer;
+}
+
+.hero-swiper__img,
+.hero-swiper__placeholder {
+    width: 100%;
+    height: min(58vw, 320px);
+    min-height: 210px;
+    object-fit: cover;
+    display: block;
+}
+
+.hero-swiper__placeholder {
+    background: var(--banner-placeholder, #f2ece4);
+}
+
+.hero-swiper__img--contain {
+    object-fit: contain;
+    background: #f3f3f3;
 }
 
 .ticker {
@@ -739,6 +771,342 @@ body.menu-open {
     line-height: 1.2;
     font-weight: 800;
     text-transform: uppercase;
+}
+
+/* Contacts page - close to plombirflowers.ru/contacts */
+.info-page--contacts-mobile {
+    background: #ffffff;
+    padding: 0;
+}
+
+.contacts-mobile {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 30px 16px 36px;
+}
+
+.contacts-mobile__header {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    align-items: end;
+    margin-bottom: 34px;
+}
+
+.contacts-mobile__title {
+    font-size: clamp(42px, 13vw, 72px);
+    line-height: 0.95;
+    text-transform: uppercase;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+}
+
+.contacts-mobile__time {
+    font-size: 18px;
+    line-height: 1.25;
+    text-align: left;
+}
+
+.contacts-mobile__grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 22px 18px;
+}
+
+.contacts-mobile__item {
+    min-width: 0;
+}
+
+.contacts-mobile__label {
+    font-size: 16px;
+    line-height: 1.25;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+.contacts-mobile__link {
+    color: #141414;
+    text-decoration: none;
+    font-size: 20px;
+    line-height: 1.25;
+    word-break: break-word;
+}
+
+.contacts-mobile__address-block {
+    margin-top: 28px;
+}
+
+.contacts-mobile__label--home {
+    margin-bottom: 10px;
+}
+
+.contacts-mobile__address {
+    display: inline-flex;
+    gap: 8px;
+    align-items: center;
+    color: #141414;
+    text-decoration: none;
+    font-size: 22px;
+    line-height: 1.2;
+}
+
+.contacts-mobile__pin {
+    font-size: 19px;
+    line-height: 1;
+}
+
+.contacts-mobile__notice {
+    margin-top: 28px;
+    color: #5e1720;
+    font-size: 22px;
+    line-height: 1.24;
+    text-transform: uppercase;
+    font-weight: 700;
+}
+
+.contacts-mobile__map-wrap {
+    margin-top: 22px;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.contacts-mobile__map {
+    width: 100%;
+    height: 520px;
+    border: 0;
+    display: block;
+    background: #efefef;
+}
+
+.contacts-mobile__map--gray {
+    filter: grayscale(1) saturate(0.35) contrast(0.95);
+}
+
+@media (max-width: 720px) {
+    .contacts-mobile {
+        padding: 22px 14px 30px;
+    }
+
+    .contacts-mobile__header,
+    .contacts-mobile__grid {
+        grid-template-columns: 1fr;
+    }
+
+    .contacts-mobile__header {
+        margin-bottom: 24px;
+    }
+
+    .contacts-mobile__title {
+        font-size: clamp(34px, 12vw, 54px);
+    }
+
+    .contacts-mobile__time {
+        font-size: 15px;
+    }
+
+    .contacts-mobile__label {
+        font-size: 13px;
+        margin-bottom: 6px;
+    }
+
+    .contacts-mobile__link {
+        font-size: 18px;
+    }
+
+    .contacts-mobile__address {
+        font-size: 17px;
+    }
+
+    .contacts-mobile__notice {
+        font-size: 15px;
+    }
+
+    .contacts-mobile__map {
+        height: 420px;
+    }
+}
+
+/* Delivery / Payment pages */
+.info-page--service-mobile {
+    background: #ffffff;
+    padding: 0;
+}
+
+.service-switcher {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    max-width: 560px;
+    margin: 0 auto;
+    gap: 24px;
+    padding: 36px 16px 28px;
+}
+
+.service-switcher__item {
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    text-align: center;
+    color: #111;
+}
+
+.service-switcher__item img {
+    width: min(28vw, 104px);
+    height: min(28vw, 104px);
+    border-radius: 50%;
+    object-fit: cover;
+    display: block;
+    margin: 0 auto 10px;
+    border: 0;
+}
+
+.service-switcher__item span {
+    font-size: 14px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.service-mobile {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 10px 16px 44px;
+}
+
+.service-mobile__title {
+    font-size: clamp(46px, 12vw, 74px);
+    line-height: 0.95;
+    text-transform: uppercase;
+    letter-spacing: 0.01em;
+    font-weight: 700;
+    margin-bottom: 30px;
+}
+
+.service-mobile__lead {
+    font-size: 21px;
+    line-height: 1.3;
+    max-width: 40ch;
+    margin-bottom: 28px;
+}
+
+.service-mobile__text {
+    font-size: 18px;
+    line-height: 1.45;
+    max-width: 58ch;
+    margin-bottom: 20px;
+}
+
+.service-mobile__list {
+    margin: 0 0 22px 20px;
+    padding: 0;
+    font-size: 18px;
+    line-height: 1.45;
+    max-width: 58ch;
+}
+
+.service-mobile__list li {
+    margin-bottom: 8px;
+}
+
+.service-mobile__subtitle {
+    font-size: 19px;
+    line-height: 1.3;
+    font-weight: 800;
+    margin: 34px 0 12px;
+}
+
+.service-mobile__help {
+    margin-top: 40px;
+    border-top: 1px solid #e7e7e7;
+    padding-top: 24px;
+}
+
+.service-mobile__help h3 {
+    font-size: 44px;
+    line-height: 0.95;
+    text-transform: uppercase;
+    margin-bottom: 18px;
+}
+
+.service-mobile__help p {
+    font-size: 18px;
+    line-height: 1.45;
+    max-width: 54ch;
+    margin-bottom: 12px;
+}
+
+.service-mobile__help a {
+    display: block;
+    color: #111;
+    text-decoration: none;
+    font-size: 18px;
+    line-height: 1.45;
+    margin-bottom: 8px;
+}
+
+@media (max-width: 720px) {
+    .service-switcher {
+        gap: 14px;
+        padding: 24px 14px 20px;
+    }
+
+    .service-switcher__item img {
+        width: min(30vw, 96px);
+        height: min(30vw, 96px);
+    }
+
+    .service-switcher__item span {
+        font-size: 11px;
+        letter-spacing: 0.05em;
+    }
+
+    .service-mobile {
+        padding: 12px 14px 34px;
+    }
+
+    .service-mobile__title {
+        font-size: clamp(34px, 12vw, 56px);
+        margin-bottom: 18px;
+    }
+
+    .service-mobile__lead {
+        font-size: 14px;
+        line-height: 1.4;
+        margin-bottom: 16px;
+    }
+
+    .service-mobile__text {
+        font-size: 13px;
+        line-height: 1.42;
+        margin-bottom: 14px;
+    }
+
+    .service-mobile__list {
+        font-size: 13px;
+        line-height: 1.42;
+        margin: 0 0 14px 18px;
+    }
+
+    .service-mobile__subtitle {
+        font-size: 14px;
+        margin: 20px 0 8px;
+    }
+
+    .service-mobile__help {
+        margin-top: 22px;
+        padding-top: 14px;
+    }
+
+    .service-mobile__help h3 {
+        font-size: clamp(32px, 11vw, 46px);
+        margin-bottom: 10px;
+    }
+
+    .service-mobile__help p,
+    .service-mobile__help a {
+        font-size: 13px;
+        line-height: 1.42;
+        margin-bottom: 6px;
+    }
 }
 
 /* ══════════════════════════════════════════════

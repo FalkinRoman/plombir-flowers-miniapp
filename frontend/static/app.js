@@ -6,6 +6,12 @@
 
 const API = '/api';
 const LIMIT = 20;
+const CONTACTS_COORDS = [59.948702, 30.36033]; // ул. Кирочная, 8Б
+const MAPS_URL = 'https://yandex.ru/maps/?text=%D1%83%D0%BB.%20%D0%9A%D0%B8%D1%80%D0%BE%D1%87%D0%BD%D0%B0%D1%8F%2C%208%D0%91';
+const SERVICE_PREVIEW = {
+    delivery: 'https://optim.tildacdn.com/tild3033-3464-4334-a666-346339363130/-/cover/200x200/center/center/-/format/webp/80594010.jpg.webp',
+    payment: 'https://optim.tildacdn.com/tild3466-3139-4433-a639-306438323036/-/cover/200x200/center/center/-/format/webp/IMG_1889.jpg.webp',
+};
 const FALLBACK_BANNERS = [
     {
         id: 'plombir-top-2',
@@ -69,6 +75,9 @@ let state = {
     initialBootLoading: true,
     initialProductsPending: null,
 };
+let yandexMapsPromise = null;
+let contactsMapInstance = null;
+let heroSwiper = null;
 
 // ── Cart (localStorage) ──
 function getCart() {
@@ -270,6 +279,35 @@ function menuOpenInfo(page) {
     openInfoPage(page);
 }
 
+function openExternalUrl(url) {
+    if (!url) return;
+    if (tg && typeof tg.openLink === 'function') {
+        tg.openLink(url);
+        return;
+    }
+    window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+function openMap(event) {
+    if (event) event.preventDefault();
+    openExternalUrl(MAPS_URL);
+}
+
+function renderServiceSwitcher(activePage) {
+    return `
+        <div class="service-switcher">
+            <button class="service-switcher__item" onclick="openInfoPage('delivery')" aria-label="Открыть страницу доставки">
+                <img src="${SERVICE_PREVIEW.delivery}" alt="Доставка" loading="lazy" />
+                <span>Доставка</span>
+            </button>
+            <button class="service-switcher__item" onclick="openInfoPage('payment')" aria-label="Открыть страницу оплаты">
+                <img src="${SERVICE_PREVIEW.payment}" alt="Оплата" loading="lazy" />
+                <span>Оплата</span>
+            </button>
+        </div>
+    `;
+}
+
 function setActiveMenuLink(target) {
     document.querySelectorAll('.side-menu__link').forEach((link) => {
         link.classList.toggle('active', link.dataset.menuTarget === target);
@@ -313,7 +351,7 @@ function handleBannerTarget(target) {
         return;
     }
     if (/^https?:\/\//i.test(t)) {
-        window.open(t, '_blank', 'noopener,noreferrer');
+        openExternalUrl(t);
     }
 }
 
@@ -321,98 +359,48 @@ function renderHeroSlider() {
     if (!$heroTrack || !$heroDots) return;
     const banners = getEffectiveBanners();
     if (!banners.length) {
+        if (heroSwiper) {
+            heroSwiper.destroy(true, true);
+            heroSwiper = null;
+        }
         $heroTrack.innerHTML = '';
         $heroDots.innerHTML = '';
         state.heroRenderKey = '';
         return;
     }
 
-    if (state.heroIndex >= banners.length) state.heroIndex = 0;
     const key = [
         banners.map((b) => `${b.id}|${b.image_url}|${b.title}|${b.subtitle}|${b.target}`).join('||'),
-        state.initialBootLoading ? 'boot' : 'ready',
     ].join('::');
     if (key !== state.heroRenderKey) {
-        $heroTrack.innerHTML = banners.map((b, idx) => `
-            <button
-                class="hero__slide${idx === state.heroIndex ? ' active' : ''} is-loading${b.image_url ? ' has-image' : ' is-placeholder'}"
-                data-target="${b.target || 'catalog'}"
-                style="--banner-placeholder:${getBannerPlaceholder(idx, b.id)}"
-                aria-label="Баннер ${idx + 1}"
-            >
-                ${b.image_url ? `<img class="hero__img" src="${b.image_url}" alt="" loading="lazy" />` : ''}
-            </button>
-        `).join('');
+        $heroTrack.innerHTML = `
+            <div class="swiper hero-swiper" id="hero-swiper">
+                <div class="swiper-wrapper">
+                    ${banners.map((b, idx) => `
+                        <div class="swiper-slide">
+                            <button class="hero-swiper__slide" data-target="${b.target || 'catalog'}" aria-label="Баннер ${idx + 1}">
+                                ${b.image_url
+                                    ? `<img class="hero-swiper__img${idx === 0 ? ' hero-swiper__img--contain' : ''}" src="${b.image_url}" alt="" loading="lazy" />`
+                                    : `<div class="hero-swiper__placeholder" style="--banner-placeholder:${getBannerPlaceholder(idx, b.id)}"></div>`
+                                }
+                            </button>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
 
-        $heroDots.innerHTML = banners.map((_, idx) => `
-            <button class="hero__dot${idx === state.heroIndex ? ' active' : ''}" data-index="${idx}" aria-label="Слайд ${idx + 1}"></button>
-        `).join('');
-
-        $heroTrack.querySelectorAll('.hero__slide').forEach(slide => {
+        $heroTrack.querySelectorAll('.hero-swiper__slide').forEach((slide) => {
             slide.addEventListener('click', () => handleBannerTarget(slide.dataset.target));
-            const img = slide.querySelector('.hero__img');
-            const loadingStartedAt = Date.now();
-            const finishLoading = () => {
-                const completeWhenReady = () => {
-                    if (state.initialBootLoading) {
-                        setTimeout(completeWhenReady, 40);
-                        return;
-                    }
-                    // Показываем skeleton минимум как у карточек, чтобы загрузка была визуально очевидной.
-                    const elapsed = Date.now() - loadingStartedAt;
-                    const minVisibleMs = 420;
-                    const delay = Math.max(0, minVisibleMs - elapsed);
-                    setTimeout(() => {
-                        slide.classList.remove('is-loading');
-                        slide.classList.add('loaded');
-                    }, delay);
-                };
-                completeWhenReady();
-            };
-            const failToPlaceholder = () => {
-                const completeWhenReady = () => {
-                    if (state.initialBootLoading) {
-                        setTimeout(completeWhenReady, 40);
-                        return;
-                    }
-                    slide.classList.remove('is-loading');
-                    slide.classList.remove('has-image');
-                    slide.classList.add('is-placeholder', 'loaded');
-                };
-                completeWhenReady();
-            };
-            if (!img) {
-                finishLoading();
-                return;
-            }
-            if (img.complete && img.naturalWidth > 0) {
-                finishLoading();
-            } else {
-                img.addEventListener('load', finishLoading, { once: true });
-                img.addEventListener('error', failToPlaceholder, { once: true });
-            }
         });
-        $heroDots.querySelectorAll('.hero__dot').forEach(dot => {
-            dot.addEventListener('click', () => {
-                state.heroIndex = Number(dot.dataset.index);
-                updateHeroActiveState();
-                startHeroAutoplay();
-            });
-        });
+
+        initHeroSwiper(banners.length);
         state.heroRenderKey = key;
-    } else {
-        updateHeroActiveState();
     }
 }
 
 function startHeroAutoplay() {
-    if (state.heroTimer) clearInterval(state.heroTimer);
-    const banners = getEffectiveBanners();
-    if (banners.length <= 1) return;
-    state.heroTimer = setInterval(() => {
-        state.heroIndex = (state.heroIndex + 1) % banners.length;
-        updateHeroActiveState();
-    }, 4500);
+    if (heroSwiper?.autoplay) heroSwiper.autoplay.start();
 }
 
 function renderTicker() {
@@ -446,10 +434,40 @@ function restartTickerAnimation() {
 }
 
 function updateHeroActiveState() {
-    const slides = $heroTrack ? $heroTrack.querySelectorAll('.hero__slide') : [];
-    const dots = $heroDots ? $heroDots.querySelectorAll('.hero__dot') : [];
-    slides.forEach((slide, idx) => slide.classList.toggle('active', idx === state.heroIndex));
-    dots.forEach((dot, idx) => dot.classList.toggle('active', idx === state.heroIndex));
+    // Swiper handles active states internally.
+}
+
+function initHeroSwiper(slideCount) {
+    if (heroSwiper) {
+        heroSwiper.destroy(true, true);
+        heroSwiper = null;
+    }
+    if (!$heroDots) return;
+    if (typeof window.Swiper !== 'function') {
+        $heroDots.innerHTML = '';
+        return;
+    }
+
+    heroSwiper = new window.Swiper('#hero-swiper', {
+        slidesPerView: 1,
+        spaceBetween: 0,
+        loop: slideCount > 1,
+        speed: 520,
+        autoplay: slideCount > 1 ? {
+            delay: 4500,
+            disableOnInteraction: false,
+            pauseOnMouseEnter: false,
+        } : false,
+        pagination: {
+            el: '#hero-dots',
+            clickable: true,
+            bulletClass: 'hero__dot',
+            bulletActiveClass: 'active',
+            renderBullet: function (index, className) {
+                return `<button class="${className}" aria-label="Слайд ${index + 1}"></button>`;
+            },
+        },
+    });
 }
 
 function getBannerPlaceholder(index, id) {
@@ -1245,8 +1263,8 @@ function renderInfoScreen(page) {
                     <div class="about-mobile__visit-grid">
                         <div class="about-mobile__visit-card">
                             <p class="about-mobile__visit-address">Кирочная, 8Б</p>
-                            <p class="about-mobile__visit-hours">с 8:30 до 22</p>
-                            <a class="about-mobile__visit-btn" href="https://yandex.ru/maps/?text=%D0%A1%D0%9F%D0%B1%2C%20%D1%83%D0%BB.%20%D0%9A%D0%B8%D1%80%D0%BE%D1%87%D0%BD%D0%B0%D1%8F%2C%208%D0%91" target="_blank" rel="noopener noreferrer">Смотреть на карте</a>
+                            <p class="about-mobile__visit-hours">с 8:30 до 22:00</p>
+                            <a class="about-mobile__visit-btn" href="${MAPS_URL}" onclick="openMap(event)" target="_blank" rel="noopener noreferrer">Смотреть на карте</a>
                         </div>
                         <div class="about-mobile__img-wrap about-mobile__img-wrap--side">
                             <img class="about-mobile__img" src="https://static.tildacdn.com/tild3238-3165-4564-b364-366665373462/DSC00674-HDR_resized.jpg" alt="Интерьер студии Plombir" loading="lazy" />
@@ -1255,6 +1273,182 @@ function renderInfoScreen(page) {
 
                     <div class="about-mobile__img-wrap about-mobile__img-wrap--wide">
                         <img class="about-mobile__img" src="https://static.tildacdn.com/tild6531-6434-4138-b437-356362363636/DSC00648-2_resized_1.jpg" alt="Студия Plombir Flowers" loading="lazy" />
+                    </div>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    if (page === 'contacts') {
+        $screenInfo.innerHTML = `
+            <div class="info-page info-page--contacts-mobile">
+                <div class="contacts-mobile">
+                    <div class="contacts-mobile__header">
+                        <h2 class="contacts-mobile__title">Контакты</h2>
+                        <p class="contacts-mobile__time">Мы на связи с 8:30 до 22:00</p>
+                    </div>
+
+                    <div class="contacts-mobile__grid">
+                        <div class="contacts-mobile__item">
+                            <p class="contacts-mobile__label">Email</p>
+                            <a class="contacts-mobile__link" href="mailto:info@plombirflowers.ru">info@plombirflowers.ru</a>
+                        </div>
+
+                        <div class="contacts-mobile__item">
+                            <p class="contacts-mobile__label">Телефон</p>
+                            <a class="contacts-mobile__link" href="tel:+79819672833">+7 981 967 28 33</a>
+                        </div>
+
+                        <div class="contacts-mobile__item">
+                            <p class="contacts-mobile__label">По вопросам сотрудничества</p>
+                            <a class="contacts-mobile__link" href="mailto:pr@plombirflowers.ru">pr@plombirflowers.ru</a>
+                        </div>
+
+                        <div class="contacts-mobile__item">
+                            <p class="contacts-mobile__label">Телеграм</p>
+                            <a class="contacts-mobile__link" href="https://t.me/plombir_flowers" target="_blank" rel="noopener noreferrer">@plombir_flowers</a>
+                        </div>
+
+                        <div class="contacts-mobile__item">
+                            <p class="contacts-mobile__label">Инстаграм*</p>
+                            <a class="contacts-mobile__link" href="https://instagram.com/plombir_flowers" target="_blank" rel="noopener noreferrer">@plombir_flowers</a>
+                        </div>
+                    </div>
+
+                    <div class="contacts-mobile__address-block">
+                        <p class="contacts-mobile__label contacts-mobile__label--home">Наш цветочный дом</p>
+                        <a class="contacts-mobile__address" href="${MAPS_URL}" onclick="openMap(event)" target="_blank" rel="noopener noreferrer">
+                            <span class="contacts-mobile__pin" aria-hidden="true">📍</span>
+                            ул. Кирочная, 8Б
+                        </a>
+                    </div>
+
+                    <p class="contacts-mobile__notice">
+                        Хотим обратить ваше внимание на то, что совершить заказ возможно исключительно по указанному номеру телефона,
+                        на нашем сайте и оффлайн в студии. Будьте внимательны!
+                    </p>
+
+                    <div class="contacts-mobile__map-wrap">
+                        <div id="contacts-map" class="contacts-mobile__map contacts-mobile__map--gray" aria-label="Карта Plombir Flowers"></div>
+                    </div>
+                </div>
+            </div>
+        `;
+        initContactsMap();
+        return;
+    }
+
+    if (page === 'delivery') {
+        $screenInfo.innerHTML = `
+            <div class="info-page info-page--service-mobile">
+                ${renderServiceSwitcher('delivery')}
+                <div class="service-mobile">
+                    <h2 class="service-mobile__title">Доставка</h2>
+                    <p class="service-mobile__lead">
+                        <strong>Доставляем по СПб и ЛО с 9:30 до 22:30</strong> в выбранном интервале.<br/>
+                        <strong>Принимаем заказы ежедневно с 9:00 до 22:00</strong><br/>
+                        <strong>Доставка осуществляется только от 4000 ₽.</strong>
+                    </p>
+
+                    <p class="service-mobile__text">
+                        В праздничные дни и дни, когда движение по городу затруднено, стоимость доставки и интервал могут быть увеличены.
+                    </p>
+
+                    <h3 class="service-mobile__subtitle">Самовывоз</h3>
+                    <p class="service-mobile__text">
+                        Забрать заказ самостоятельно можно в нашем цветочном доме на Кирочной, 8Б, когда вы получите уведомление о его готовности.
+                    </p>
+
+                    <h3 class="service-mobile__subtitle">Доставка курьером</h3>
+                    <p class="service-mobile__text">
+                        Доставку в <strong>трехчасовом интервале</strong> при <strong>заказе от 10 000 руб.</strong> мы осуществим <strong>бесплатно</strong>.
+                    </p>
+                    <p class="service-mobile__text">
+                        Стоимость доставки в трехчасовом интервале рассчитывается индивидуально в зависимости от удаленности адреса.
+                        Точную стоимость можно узнать в корзине при оформлении заказа или уточнить у менеджера.
+                    </p>
+
+                    <h3 class="service-mobile__subtitle">Сокращенные интервалы</h3>
+                    <p class="service-mobile__text">
+                        Также возможна доставка в сокращенных интервалах:
+                    </p>
+                    <ul class="service-mobile__list">
+                        <li>в трехчасовом интервале — от 390 ₽ в зависимости от удаленности адреса и <strong>бесплатно</strong> при заказе от <strong>10 000 ₽</strong> (в пределах КАД);</li>
+                        <li>в полуторачасовом интервале — тариф <strong>x1.5</strong> к стандартной доставке;</li>
+                        <li>к точному времени в интервале 15 минут — тариф <strong>x2</strong> к стандартной доставке.</li>
+                    </ul>
+
+                    <h3 class="service-mobile__subtitle">Возврат</h3>
+                    <p class="service-mobile__text">
+                        Если вы остались недовольны собранным букетом, сообщите нам об этом в течение 2-х часов с момента его получения.
+                        Мы заменим его на новый или вернем вам деньги.
+                    </p>
+
+                    <h3 class="service-mobile__subtitle">Упаковка и комплектация</h3>
+                    <p class="service-mobile__text">
+                        Классическая упаковка в стиле Plombir — бумага тишью и матовая пленка, которая делает букет воздушным и объемным.
+                        Также каждый букет можно оформить в фирменную транспортировочную коробку в подарок.
+                    </p>
+                    <p class="service-mobile__text">
+                        К каждому букету мы добавляем инструкцию по уходу, средство для сохранения свежести и по желанию фирменную открытку с вашим текстом.
+                    </p>
+                    <p class="service-mobile__text">
+                        Каждый букет мы помещаем на акваножку (мешочек с водой), которая поддерживает свежесть цветов.
+                        В студии также доступны картонные аквабоксы для воды (+150 ₽).
+                    </p>
+
+                    <p class="service-mobile__text">
+                        Для ускорения осуществления доставки наши клиенты часто пользуются сторонним сервисом.
+                        Мы можем передать композицию курьеру Яндекс.Доставки и проследить, чтобы заказ приехал целым и невредимым.
+                    </p>
+                    <p class="service-mobile__text">
+                        Если вы хотите сделать сюрприз, мы сами узнаем адрес получателя и доставим букет в удобном для него интервале.
+                    </p>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    if (page === 'payment') {
+        $screenInfo.innerHTML = `
+            <div class="info-page info-page--service-mobile">
+                ${renderServiceSwitcher('payment')}
+                <div class="service-mobile">
+                    <h2 class="service-mobile__title">Оплата</h2>
+                    <p class="service-mobile__text">
+                        В нашей студии вы можете оплатить заказ наличными или банковской картой.
+                    </p>
+                    <p class="service-mobile__text">
+                        На сайте после оформления заказа автоматически произойдет переход к оплате.
+                        Также менеджер может сформировать для вас официальную банковскую ссылку.
+                        К оплате принимаются банковские карты VISA, Mastercard, МИР российских банков,
+                        возможна оплата по Системе быстрых платежей (СБП).
+                    </p>
+                    <h3 class="service-mobile__subtitle">Способы оплаты</h3>
+                    <ul class="service-mobile__list">
+                        <li>Банковской картой или СБП через ЮKassa;</li>
+                        <li>Долями от Т-Банк;</li>
+                        <li>Яндекс Пэй и Сплит.</li>
+                    </ul>
+                    <p class="service-mobile__text">
+                        Платежи происходят через систему ЮKassa, защищены сертификатом SSL и протоколом 3D Secure.
+                        Plombir Flowers не собирает и не хранит платежные данные клиентов.
+                    </p>
+                    <p class="service-mobile__text">
+                        Также мы принимаем оплату иностранной картой. Для уточнения подробностей обращайтесь к менеджеру.
+                    </p>
+                    <p class="service-mobile__text">
+                        Наши менеджеры отправят вам фото готового букета перед тем, как отправить его на доставку.
+                    </p>
+
+                    <div class="service-mobile__help">
+                        <h3>Мы всегда рады помочь</h3>
+                        <p>Если вы не нашли ответа на ваш вопрос, свяжитесь с нами любым удобным способом:</p>
+                        <a href="tel:+79819672833">Позвонить +7 981 967 28 33</a>
+                        <a href="https://t.me/plombir_flowers" target="_blank" rel="noopener noreferrer">Написать в Telegram</a>
+                        <a href="https://wa.me/79819672833" target="_blank" rel="noopener noreferrer">Написать в WhatsApp</a>
                     </div>
                 </div>
             </div>
@@ -1362,6 +1556,76 @@ function renderInfoScreen(page) {
             </div>
         </div>
     `;
+}
+
+function ensureYandexMapsApi() {
+    if (window.ymaps) return Promise.resolve(window.ymaps);
+    if (yandexMapsPromise) return yandexMapsPromise;
+
+    yandexMapsPromise = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://api-maps.yandex.ru/2.1/?lang=ru_RU';
+        script.async = true;
+        script.onload = () => {
+            if (!window.ymaps) {
+                reject(new Error('Yandex Maps API not available'));
+                return;
+            }
+            window.ymaps.ready(() => resolve(window.ymaps));
+        };
+        script.onerror = () => reject(new Error('Failed to load Yandex Maps API'));
+        document.head.appendChild(script);
+    });
+
+    return yandexMapsPromise;
+}
+
+async function initContactsMap() {
+    const mapNode = document.getElementById('contacts-map');
+    if (!mapNode) return;
+
+    try {
+        const ymaps = await ensureYandexMapsApi();
+        const currentNode = document.getElementById('contacts-map');
+        if (!currentNode) return;
+
+        if (contactsMapInstance && typeof contactsMapInstance.destroy === 'function') {
+            contactsMapInstance.destroy();
+            contactsMapInstance = null;
+        }
+
+        contactsMapInstance = new ymaps.Map('contacts-map', {
+            center: CONTACTS_COORDS,
+            zoom: 15,
+            controls: ['zoomControl'],
+        }, {
+            suppressMapOpenBlock: true,
+            yandexMapDisablePoiInteractivity: true,
+        });
+
+        contactsMapInstance.behaviors.disable('scrollZoom');
+
+        const placemark = new ymaps.Placemark(CONTACTS_COORDS, {
+            balloonContent: 'Plombir Flowers, ул. Кирочная, 8Б',
+            hintContent: 'Plombir Flowers',
+        }, {
+            preset: 'islands#circleDotIcon',
+            iconColor: '#3f3f3f',
+        });
+
+        contactsMapInstance.geoObjects.add(placemark);
+    } catch (e) {
+        mapNode.innerHTML = `
+            <iframe
+                class="contacts-mobile__map"
+                src="https://yandex.ru/map-widget/v1/?text=%D1%83%D0%BB.%20%D0%9A%D0%B8%D1%80%D0%BE%D1%87%D0%BD%D0%B0%D1%8F%2C%208%D0%91%2C%20%D0%A1%D0%B0%D0%BD%D0%BA%D1%82-%D0%9F%D0%B5%D1%82%D0%B5%D1%80%D0%B1%D1%83%D1%80%D0%B3&z=15"
+                loading="lazy"
+                allowfullscreen
+                referrerpolicy="no-referrer-when-downgrade"
+                title="Карта Plombir Flowers"
+            ></iframe>
+        `;
+    }
 }
 
 // ── Toast ──
