@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:ital,opsz,wght@0,6..12,300;0,6..12,400;0,6..12,500;0,6..12,600;0,6..12,700;0,6..12,800;1,6..12,300;1,6..12,400&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/remixicon@4.2.0/fonts/remixicon.css" rel="stylesheet">
-    <link rel="stylesheet" href="/app/static/styles.css?v=16">
+    <link rel="stylesheet" href="/app/static/styles.css?v=23">
 </head>
 <body>
     <div id="app">
@@ -109,11 +109,11 @@
                 </button>
             </div>
             <nav class="side-menu__nav">
-                <button class="side-menu__link" onclick="menuOpenCatalog()">Каталог</button>
-                <button class="side-menu__link" onclick="menuOpenInfo('about')">О нас</button>
-                <button class="side-menu__link" onclick="menuOpenInfo('payment')">Оплата</button>
-                <button class="side-menu__link" onclick="menuOpenInfo('delivery')">Доставка</button>
-                <button class="side-menu__link" onclick="menuOpenInfo('contacts')">Контакты</button>
+                <button class="side-menu__link" data-menu-target="catalog" onclick="menuOpenCatalog()">Каталог</button>
+                <button class="side-menu__link" data-menu-target="about" onclick="menuOpenInfo('about')">О нас</button>
+                <button class="side-menu__link" data-menu-target="payment" onclick="menuOpenInfo('payment')">Оплата</button>
+                <button class="side-menu__link" data-menu-target="delivery" onclick="menuOpenInfo('delivery')">Доставка</button>
+                <button class="side-menu__link" data-menu-target="contacts" onclick="menuOpenInfo('contacts')">Контакты</button>
             </nav>
             <div class="side-menu__footer">
                 <div class="side-menu__socials">
@@ -133,6 +133,6 @@
         </aside>
     </div>
 
-    <script src="/app/static/app.js?v=15"></script>
+    <script src="/app/static/app.js?v=24"></script>
 </body>
 </html>

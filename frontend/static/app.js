@@ -6,6 +6,43 @@
 
 const API = '/api';
 const LIMIT = 20;
+const FALLBACK_BANNERS = [
+    {
+        id: 'plombir-top-2',
+        title: '',
+        subtitle: '',
+        target: 'catalog',
+        image_url: 'https://optim.tildacdn.com/tild6434-3265-4536-a134-636562306563/-/format/webp/F4.jpg.webp',
+    },
+    {
+        id: 'plombir-top-1',
+        title: '',
+        subtitle: '',
+        target: 'catalog',
+        image_url: 'https://optim.tildacdn.com/tild3464-3235-4331-a136-633031386530/-/format/webp/Frame_9.jpg.webp',
+    },
+    {
+        id: 'plombir-top-3',
+        title: '',
+        subtitle: '',
+        target: 'catalog',
+        image_url: 'https://optim.tildacdn.com/tild3436-3739-4134-b261-613064396336/-/format/webp/Frame_12.jpg.webp',
+    },
+    {
+        id: 'plombir-top-4',
+        title: '',
+        subtitle: '',
+        target: 'catalog',
+        image_url: 'https://optim.tildacdn.com/tild6265-3865-4463-b736-303137666334/-/format/webp/F3.jpg.webp',
+    },
+    {
+        id: 'plombir-top-5',
+        title: '',
+        subtitle: '',
+        target: 'catalog',
+        image_url: 'https://optim.tildacdn.com/tild6431-6164-4164-b436-643938336364/-/format/webp/Frame_13.jpg.webp',
+    },
+];
 
 // ── State ──
 let state = {
@@ -153,7 +190,11 @@ function showScreen(name) {
     // Scroll to top
     if (name !== 'catalog') {
         window.scrollTo(0, 0);
+    } else {
+        requestAnimationFrame(() => restartTickerAnimation());
     }
+    const menuTarget = name === 'info' ? (state.infoPage || 'about') : 'catalog';
+    setActiveMenuLink(menuTarget);
 }
 
 function goBack() {
@@ -229,6 +270,12 @@ function menuOpenInfo(page) {
     openInfoPage(page);
 }
 
+function setActiveMenuLink(target) {
+    document.querySelectorAll('.side-menu__link').forEach((link) => {
+        link.classList.toggle('active', link.dataset.menuTarget === target);
+    });
+}
+
 // ── UI Content (hero + ticker) ──
 async function loadUiContent() {
     try {
@@ -240,8 +287,11 @@ async function loadUiContent() {
             ticker_items: [
                 'БЕСПЛАТНАЯ ДОСТАВКА ОТ 10 000 ₽ В ПРЕДЕЛАХ КАД',
             ],
-            banners: [],
+            banners: FALLBACK_BANNERS,
         };
+    }
+    if (!Array.isArray(state.uiContent.banners) || state.uiContent.banners.length === 0) {
+        state.uiContent.banners = FALLBACK_BANNERS;
     }
 }
 
@@ -249,13 +299,7 @@ function getEffectiveBanners() {
     if (Array.isArray(state.uiContent.banners) && state.uiContent.banners.length) {
         return state.uiContent.banners;
     }
-    return [{
-        id: 'placeholder',
-        title: '',
-        subtitle: '',
-        target: 'catalog',
-        image_url: '',
-    }];
+    return FALLBACK_BANNERS;
 }
 
 function handleBannerTarget(target) {
@@ -382,6 +426,23 @@ function renderTicker() {
         for (const item of safeItems) repeated.push(item);
     }
     $tickerInner.innerHTML = repeated.map((text) => `<span class="ticker__item">${text}</span>`).join('');
+    requestAnimationFrame(() => restartTickerAnimation());
+}
+
+function restartTickerAnimation() {
+    if (!$tickerInner) return;
+    const parent = $tickerInner.parentElement;
+    if (!parent) return;
+
+    // If initial content is too short for movement, extend it before restarting animation.
+    if ($tickerInner.scrollWidth <= parent.clientWidth) {
+        const original = $tickerInner.innerHTML;
+        $tickerInner.innerHTML = `${original}${original}`;
+    }
+
+    $tickerInner.style.animation = 'none';
+    void $tickerInner.offsetWidth;
+    $tickerInner.style.animation = 'tickerMove 22s linear infinite';
 }
 
 function updateHeroActiveState() {
@@ -1110,6 +1171,97 @@ function openInfoPage(page = 'about') {
 }
 
 function renderInfoScreen(page) {
+    if (page === 'about') {
+        $screenInfo.innerHTML = `
+            <div class="info-page info-page--about-mobile">
+                <div class="about-mobile__line"></div>
+
+                <div class="about-mobile__section about-mobile__section--top">
+                    <h2 class="about-mobile__title">О нас</h2>
+
+                    <h3 class="about-mobile__subtitle">Неповторимая флористика</h3>
+                    <p class="about-mobile__text">
+                        Мы обладаем своим индивидуальным и узнаваемым стилем. В первую очередь это наши пломбирные букеты,
+                        которые никого не оставляют равнодушными.
+                    </p>
+                    <p class="about-mobile__text">
+                        Также у нас представлена коллекция интерьерных букетов, каждый из которых украсит ваш дом и наполнит его жизнью.
+                    </p>
+
+                    <h3 class="about-mobile__subtitle">Сервис высокого уровня</h3>
+                    <p class="about-mobile__text">
+                        Наши флористы и менеджеры постоянно проходят обучения, чтобы дарить вам высший уровень заботы.
+                    </p>
+                    <p class="about-mobile__text">
+                        Для нас сервис — это забота о госте. Мы делаем все, чтобы вы совершали заказы быстро и с удовольствием.
+                    </p>
+
+                    <h3 class="about-mobile__subtitle">Винтаж</h3>
+                    <p class="about-mobile__text">
+                        Мы развиваем новое направление и собираем для вас винтажные вазы, посуду и другие предметы интерьера.
+                        Они сохраняют свой характер и создают особую атмосферу в доме.
+                    </p>
+
+                    <h3 class="about-mobile__subtitle">Гарантия качества</h3>
+                    <p class="about-mobile__text">
+                        Если вы остались недовольны собранным букетом, сообщите нам об этом в течение 2-х часов с момента его получения.
+                    </p>
+
+                    <div class="about-mobile__img-wrap about-mobile__img-wrap--xl">
+                        <img class="about-mobile__img" src="/app/static/img/guys.png" alt="Plombir Flowers" loading="lazy" />
+                    </div>
+                </div>
+
+                <div class="about-mobile__line"></div>
+
+                <div class="about-mobile__section">
+                    <h3 class="about-mobile__mission-title">
+                        Наша миссия - быть рядом в каждый особенный день.
+                    </h3>
+                    <h3 class="about-mobile__mission-title">
+                        А также создавать особенные события каждый день.
+                    </h3>
+
+                    <p class="about-mobile__text about-mobile__text--mission">
+                        За время существования Plombir наши клиенты уже стали нашими друзьями и знают, что на нас можно положиться.
+                        Наши цветы застали ключевые моменты во многих жизнях, стали свидетелями новых этапов и событий.
+                    </p>
+
+                    <div class="about-mobile__founders">
+                        <img class="about-mobile__avatar-img" src="https://static.tildacdn.com/tild3062-3337-4663-a532-356136396638/IMG_1857.jpg" alt="Основатели Plombir Flowers" loading="lazy" />
+                        <p>— Валентина и Никита, <br/>основатели Plombir Flowers</p>
+                    </div>
+                </div>
+
+                <div class="about-mobile__line"></div>
+
+                <div class="about-mobile__section">
+                    <h3 class="about-mobile__visit-title">Приходите в гости в дом Plombir</h3>
+                    <p class="about-mobile__visit-text">
+                        Мы будем рады видеть вас в гостях в нашей студии, где можно не только порадовать себя и близких букетом,
+                        но и насладиться атмосферой и сделать красивые кадры.
+                    </p>
+
+                    <div class="about-mobile__visit-grid">
+                        <div class="about-mobile__visit-card">
+                            <p class="about-mobile__visit-address">Кирочная, 8Б</p>
+                            <p class="about-mobile__visit-hours">с 8:30 до 22</p>
+                            <a class="about-mobile__visit-btn" href="https://yandex.ru/maps/?text=%D0%A1%D0%9F%D0%B1%2C%20%D1%83%D0%BB.%20%D0%9A%D0%B8%D1%80%D0%BE%D1%87%D0%BD%D0%B0%D1%8F%2C%208%D0%91" target="_blank" rel="noopener noreferrer">Смотреть на карте</a>
+                        </div>
+                        <div class="about-mobile__img-wrap about-mobile__img-wrap--side">
+                            <img class="about-mobile__img" src="https://static.tildacdn.com/tild3238-3165-4564-b364-366665373462/DSC00674-HDR_resized.jpg" alt="Интерьер студии Plombir" loading="lazy" />
+                        </div>
+                    </div>
+
+                    <div class="about-mobile__img-wrap about-mobile__img-wrap--wide">
+                        <img class="about-mobile__img" src="https://static.tildacdn.com/tild6531-6434-4138-b437-356362363636/DSC00648-2_resized_1.jpg" alt="Студия Plombir Flowers" loading="lazy" />
+                    </div>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
     const pages = {
         about: {
             title: 'О нас',
@@ -1282,3 +1434,10 @@ document.addEventListener('keydown', (e) => {
 
 // ── Start ──
 init();
+setActiveMenuLink('catalog');
+
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && state.currentScreen === 'catalog') {
+        requestAnimationFrame(() => restartTickerAnimation());
+    }
+});
