@@ -20,6 +20,60 @@ PORT = int(os.getenv("PORT", "8000"))
 WEBAPP_URL = os.getenv("WEBAPP_URL", "http://localhost:8000/app")
 ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", "")  # Telegram chat_id админа для уведомлений
 
+
+def _bool_env(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on", "y"}
+
+
+def _int_env(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None or value.strip() == "":
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+def _float_env(name: str, default: float) -> float:
+    value = os.getenv(name)
+    if value is None or value.strip() == "":
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default
+
+
+# Интеграции (этап 3)
+YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID", "")
+YOOKASSA_SECRET_KEY = os.getenv("YOOKASSA_SECRET_KEY", "")
+YOOKASSA_RETURN_URL = os.getenv("YOOKASSA_RETURN_URL", "")
+YOOKASSA_WEBHOOK_SECRET = os.getenv("YOOKASSA_WEBHOOK_SECRET", "")
+YOOKASSA_ENABLED = _bool_env("YOOKASSA_ENABLED", default=False)
+
+MOYSKLAD_TOKEN = os.getenv("MOYSKLAD_TOKEN", "")
+MOYSKLAD_ORG_ID = os.getenv("MOYSKLAD_ORG_ID", "")
+MOYSKLAD_STORE_ID = os.getenv("MOYSKLAD_STORE_ID", "")
+MOYSKLAD_ENABLED = _bool_env("MOYSKLAD_ENABLED", default=False)
+
+SPLIT_ENABLED = _bool_env("SPLIT_ENABLED", default=True)
+SPLIT_MONTHS_DEFAULT = _int_env("SPLIT_MONTHS_DEFAULT", default=4)
+YANDEX_PAY_SDK_URL = os.getenv("YANDEX_PAY_SDK_URL", "https://pay.yandex.ru/sdk/v1/pay.js")
+YANDEX_PAY_MERCHANT_ID = os.getenv("YANDEX_PAY_MERCHANT_ID", "3535d1b5-a52a-40bd-ac12-2fca9e659e70")
+YANDEX_PAY_THEME = os.getenv("YANDEX_PAY_THEME", "light")
+
+# Автозагрузка hero-баннеров с основного сайта при пустом локальном списке
+SITE_BANNERS_SOURCE_URL = os.getenv("SITE_BANNERS_SOURCE_URL", "https://plombirflowers.ru")
+SITE_BANNERS_TTL_SECONDS = _int_env("SITE_BANNERS_TTL_SECONDS", default=21600)  # 6 часов
+
+LOYALTY_ENABLED = _bool_env("LOYALTY_ENABLED", default=False)
+LOYALTY_MAX_PERCENT = _float_env("LOYALTY_MAX_PERCENT", default=30.0)
+LOYALTY_RATE = _float_env("LOYALTY_RATE", default=1.0)  # 1 балл = 1 руб по умолчанию
+
 # Категории, которые показываем в каталоге Mini App
 # Если пусто — показываем все, кроме скрытых
 HIDDEN_CATEGORIES = {

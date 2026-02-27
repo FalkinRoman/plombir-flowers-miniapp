@@ -6,14 +6,21 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
+import time
 import uuid
+from html import unescape as html_unescape
 from pathlib import Path
 
+import httpx
+
+from backend.config import SITE_BANNERS_SOURCE_URL, SITE_BANNERS_TTL_SECONDS
 
 DATA_DIR = Path("data")
 BANNERS_DIR = DATA_DIR / "banners"
 UI_CONTENT_FILE = DATA_DIR / "ui_content.json"
+SITE_BANNERS_CACHE_FILE = DATA_DIR / "site_banners_cache.json"
 
 _LOCK = threading.Lock()
 
@@ -72,6 +79,10 @@ def get_ui_content() -> dict:
         except Exception:
             raw = DEFAULT_UI_CONTENT
         data = _normalize_content(raw)
+        if not data.get("banners"):
+            site_banners = _get_site_banners_cached(limit=5)
+            if site_banners:
+                data["banners"] = site_banners
         UI_CONTENT_FILE.write_text(
             json.dumps(data, ensure_ascii=False, indent=2),
             encoding="utf-8",
@@ -177,4 +188,76 @@ def delete_banner(banner_id: str) -> bool:
 
 def list_banners() -> list[dict]:
     return get_ui_content().get("banners", [])
+
+
+def _get_site_banners_cached(limit: int = 5) -> list[dict]:
+    now = int(time.time())
+    try:
+        if SITE_BANNERS_CACHE_FILE.exists():
+            raw = json.loads(SITE_BANNERS_CACHE_FILE.read_text(encoding="utf-8"))
+            fetched_at = int(raw.get("fetched_at") or 0)
+            banners = raw.get("banners") or []
+            if banners and (now - fetched_at) < SITE_BANNERS_TTL_SECONDS:
+                return banners[:limit]
+    except Exception:
+        pass
+
+    banners = _fetch_site_banners(limit=limit)
+    if banners:
+        try:
+            SITE_BANNERS_CACHE_FILE.write_text(
+                json.dumps({"fetched_at": now, "banners": banners}, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
+    return banners
+
+
+def _fetch_site_banners(limit: int = 5) -> list[dict]:
+    """
+    Пытаемся извлечь hero-изображения из HTML plombirflowers.ru (Tilda JSON-структуры li_img).
+    """
+    try:
+        with httpx.Client(timeout=15.0, follow_redirects=True) as client:
+            resp = client.get(SITE_BANNERS_SOURCE_URL)
+            resp.raise_for_status()
+            html = resp.text
+    except Exception:
+        return []
+
+    decoded = html_unescape(html)
+    # Пример в HTML: "li_img":"https://static.tildacdn.com/.../F4.jpg"
+    img_entries = re.findall(r'"li_img"\s*:\s*"(https://static\.tildacdn\.com[^"]+)"', decoded)
+    if not img_entries:
+        return []
+
+    preferred = []
+    secondary = []
+    seen = set()
+    for url in img_entries:
+        clean = url.strip()
+        if not clean or clean in seen:
+            continue
+        seen.add(clean)
+        low = clean.lower()
+        if not re.search(r"\.(jpg|jpeg|png|webp)$", low):
+            continue
+        # В hero чаще фото, а не сервисные иконки.
+        if re.search(r"/(f\d+|frame[_-]?\d+|\d+)\.(jpg|jpeg|webp)$", low):
+            preferred.append(clean)
+        else:
+            secondary.append(clean)
+
+    selected = (preferred + secondary)[:limit]
+    return [
+        {
+            "id": f"site-{i+1}",
+            "title": "",
+            "subtitle": "",
+            "target": "catalog",
+            "image_url": url,
+        }
+        for i, url in enumerate(selected)
+    ]
 

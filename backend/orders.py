@@ -38,13 +38,42 @@ def init_db():
             comment TEXT,
             card_text TEXT,
             items TEXT NOT NULL,
+            subtotal REAL,
             total REAL NOT NULL,
             status TEXT DEFAULT 'new',
+            payment_method TEXT DEFAULT 'manual',
+            payment_status TEXT DEFAULT 'not_required',
+            payment_id TEXT,
+            payment_url TEXT,
+            split_months INTEGER,
+            split_monthly_payment REAL,
+            loyalty_points_used REAL DEFAULT 0,
             created_at TEXT NOT NULL
         )
     """)
+    _migrate_orders_schema(conn)
     conn.commit()
     conn.close()
+
+
+def _migrate_orders_schema(conn: sqlite3.Connection):
+    existing = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(orders)").fetchall()
+    }
+    migrations = [
+        ("subtotal", "ALTER TABLE orders ADD COLUMN subtotal REAL"),
+        ("payment_method", "ALTER TABLE orders ADD COLUMN payment_method TEXT DEFAULT 'manual'"),
+        ("payment_status", "ALTER TABLE orders ADD COLUMN payment_status TEXT DEFAULT 'not_required'"),
+        ("payment_id", "ALTER TABLE orders ADD COLUMN payment_id TEXT"),
+        ("payment_url", "ALTER TABLE orders ADD COLUMN payment_url TEXT"),
+        ("split_months", "ALTER TABLE orders ADD COLUMN split_months INTEGER"),
+        ("split_monthly_payment", "ALTER TABLE orders ADD COLUMN split_monthly_payment REAL"),
+        ("loyalty_points_used", "ALTER TABLE orders ADD COLUMN loyalty_points_used REAL DEFAULT 0"),
+    ]
+    for column_name, stmt in migrations:
+        if column_name not in existing:
+            conn.execute(stmt)
 
 
 def create_order(order_data: dict) -> dict:
@@ -58,8 +87,11 @@ def create_order(order_data: dict) -> dict:
             customer_name, customer_phone,
             delivery_address, delivery_date, delivery_time,
             comment, card_text,
-            items, total, status, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)
+            items, subtotal, total, status,
+            payment_method, payment_status, payment_id, payment_url,
+            split_months, split_monthly_payment, loyalty_points_used,
+            created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         order_data.get("telegram_user_id", ""),
         order_data.get("telegram_username", ""),
@@ -71,7 +103,15 @@ def create_order(order_data: dict) -> dict:
         order_data.get("comment", ""),
         order_data.get("card_text", ""),
         json.dumps(order_data["items"], ensure_ascii=False),
+        order_data.get("subtotal", order_data["total"]),
         order_data["total"],
+        order_data.get("payment_method", "manual"),
+        order_data.get("payment_status", "not_required"),
+        order_data.get("payment_id"),
+        order_data.get("payment_url"),
+        order_data.get("split_months"),
+        order_data.get("split_monthly_payment"),
+        order_data.get("loyalty_points_used", 0),
         now,
     ))
     conn.commit()
@@ -84,6 +124,34 @@ def create_order(order_data: dict) -> dict:
         "created_at": now,
         **order_data,
     }
+
+
+def update_order_payment(
+    order_id: int,
+    *,
+    payment_status: Optional[str] = None,
+    payment_id: Optional[str] = None,
+    payment_url: Optional[str] = None,
+):
+    conn = _get_conn()
+    sets = []
+    values = []
+    if payment_status is not None:
+        sets.append("payment_status = ?")
+        values.append(payment_status)
+    if payment_id is not None:
+        sets.append("payment_id = ?")
+        values.append(payment_id)
+    if payment_url is not None:
+        sets.append("payment_url = ?")
+        values.append(payment_url)
+    if not sets:
+        conn.close()
+        return
+    values.append(order_id)
+    conn.execute(f"UPDATE orders SET {', '.join(sets)} WHERE id = ?", tuple(values))
+    conn.commit()
+    conn.close()
 
 
 def get_order(order_id: int) -> Optional[dict]:

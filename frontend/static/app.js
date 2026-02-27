@@ -74,10 +74,30 @@ let state = {
     heroRenderKey: '',
     initialBootLoading: true,
     initialProductsPending: null,
+    integrations: {
+        payments: {
+            yookassa_enabled: false,
+            split_enabled: false,
+            split_months_default: 4,
+            yandex_pay_sdk_url: 'https://pay.yandex.ru/sdk/v1/pay.js',
+            yandex_pay_merchant_id: '',
+            yandex_pay_theme: 'light',
+            methods: ['manual', 'card', 'split'],
+        },
+        loyalty: {
+            enabled: false,
+            max_percent: 30,
+            rate: 1,
+        },
+        moysklad: { enabled: false },
+    },
+    orderPricing: null,
 };
 let yandexMapsPromise = null;
 let contactsMapInstance = null;
 let heroSwiper = null;
+let yandexPayScriptPromise = null;
+const widgetMountTimers = {};
 
 // ── Cart (localStorage) ──
 function getCart() {
@@ -238,6 +258,8 @@ const $tickerInner = document.getElementById('ticker-inner');
 
 // ── Init ──
 async function init() {
+    await loadIntegrationsConfig();
+    await ensureYandexPaySdk();
     await loadUiContent();
     renderTicker();
     renderHeroSlider();
@@ -246,6 +268,60 @@ async function init() {
     await loadProducts(true);
     updateCartBadge();
     setupPriceFilter();
+}
+
+async function loadIntegrationsConfig() {
+    try {
+        const res = await fetch(`${API}/integrations/public-config`);
+        if (!res.ok) throw new Error('integrations config failed');
+        const data = await res.json();
+        state.integrations = {
+            ...state.integrations,
+            ...data,
+            payments: { ...state.integrations.payments, ...(data.payments || {}) },
+            loyalty: { ...state.integrations.loyalty, ...(data.loyalty || {}) },
+            moysklad: { ...state.integrations.moysklad, ...(data.moysklad || {}) },
+        };
+    } catch (e) {
+        console.warn('Не удалось загрузить конфиг интеграций, применены фолбэки');
+    }
+}
+
+function hasSplitSdkConfig() {
+    const p = state.integrations?.payments || {};
+    return !!(p.split_enabled && p.yandex_pay_sdk_url && p.yandex_pay_merchant_id);
+}
+
+async function ensureYandexPaySdk() {
+    if (!hasSplitSdkConfig()) return;
+    if (window.YaPay) return;
+    if (yandexPayScriptPromise) return yandexPayScriptPromise;
+    const existing = Array.from(document.scripts).find((s) => (s.src || '').includes('pay.yandex.ru/sdk/v1/pay.js'));
+    if (existing) {
+        yandexPayScriptPromise = new Promise((resolve) => {
+            if (window.YaPay) {
+                resolve();
+                return;
+            }
+            existing.addEventListener('load', () => resolve(), { once: true });
+            existing.addEventListener('error', () => resolve(), { once: true });
+        });
+        return yandexPayScriptPromise;
+    }
+    yandexPayScriptPromise = new Promise((resolve) => {
+        const script = document.createElement('script');
+        script.src = state.integrations.payments.yandex_pay_sdk_url;
+        script.async = true;
+        script.onload = () => {
+            if (window.customElements?.get('yandex-pay-badge')) {
+                document.documentElement.classList.add('split-sdk-ready');
+            }
+            resolve();
+        };
+        script.onerror = () => resolve();
+        document.head.appendChild(script);
+    });
+    return yandexPayScriptPromise;
 }
 
 // ══════════════════════════════════════════════
@@ -380,10 +456,10 @@ function renderHeroSlider() {
                         <div class="swiper-slide">
                             <button class="hero-swiper__slide" data-target="${b.target || 'catalog'}" aria-label="Баннер ${idx + 1}">
                                 ${b.image_url
-                                    ? `<img class="hero-swiper__img${idx === 0 ? ' hero-swiper__img--contain' : ''}" src="${b.image_url}" alt="" loading="lazy" />`
+                                    ? `<img class="hero-swiper__img" src="${b.image_url}" alt="" loading="lazy" />`
                                     : `<div class="hero-swiper__placeholder" style="--banner-placeholder:${getBannerPlaceholder(idx, b.id)}"></div>`
                                 }
-                            </button>
+            </button>
                         </div>
                     `).join('')}
                 </div>
@@ -393,6 +469,7 @@ function renderHeroSlider() {
         $heroTrack.querySelectorAll('.hero-swiper__slide').forEach((slide) => {
             slide.addEventListener('click', () => handleBannerTarget(slide.dataset.target));
         });
+        applyHeroSmartFit();
 
         initHeroSwiper(banners.length);
         state.heroRenderKey = key;
@@ -467,6 +544,25 @@ function initHeroSwiper(slideCount) {
                 return `<button class="${className}" aria-label="Слайд ${index + 1}"></button>`;
             },
         },
+    });
+}
+
+function applyHeroSmartFit() {
+    const imgs = $heroTrack ? $heroTrack.querySelectorAll('.hero-swiper__img') : [];
+    imgs.forEach((img) => {
+        const setFit = () => {
+            const w = Number(img.naturalWidth || 0);
+            const h = Number(img.naturalHeight || 0);
+            if (!w || !h) return;
+            const ratio = w / h;
+            // Очень широкие баннеры лучше показывать contain, чтобы не резать края.
+            img.classList.toggle('hero-swiper__img--contain', ratio >= 1.7);
+        };
+        if (img.complete) {
+            setFit();
+        } else {
+            img.addEventListener('load', setFit, { once: true });
+        }
     });
 }
 
@@ -711,6 +807,7 @@ function _renderCards(items) {
             <div class="product-card__info">
                 <div class="product-card__name">${p.name}</div>
                 <div class="product-card__price">${priceHtml}</div>
+                ${renderSplitHint(p.price, 'product-card__split')}
             </div>
             <div class="product-card__buttons">
                 <button class="product-card__btn product-card__btn--detail" data-id="${p.id}">Подробнее</button>
@@ -742,6 +839,123 @@ function _renderCards(items) {
 
 function updateLoadMore() {
     $loadMore.style.display = state.offset < state.total ? 'block' : 'none';
+}
+
+function getSplitMonths() {
+    const months = Number(state.integrations?.payments?.split_months_default || 4);
+    return Number.isFinite(months) && months > 1 ? months : 4;
+}
+
+function getSplitMonthly(price) {
+    const months = getSplitMonths();
+    const amount = Number(price || 0);
+    if (!amount) return '';
+    return formatPrice(amount / months);
+}
+
+function renderSplitHint(price, className) {
+    if (!state.integrations?.payments?.split_enabled) return '';
+    const months = getSplitMonths();
+    const merchantId = state.integrations?.payments?.yandex_pay_merchant_id || '';
+    const theme = state.integrations?.payments?.yandex_pay_theme || 'light';
+    const amount = Math.max(1, Math.round(Number(price || 0)));
+    const badgeBnpl = merchantId
+        ? `<yandex-pay-badge type="bnpl" amount="${amount}" merchant-id="${merchantId}" theme="${theme}" size="s" align="left" color="primary"></yandex-pay-badge>`
+        : '';
+    const badgeCashback = merchantId
+        ? `<yandex-pay-badge type="cashback" amount="${amount}" merchant-id="${merchantId}" theme="${theme}" size="s" align="left" color="primary"></yandex-pay-badge>`
+        : '';
+    return `
+        <div class="${className}">
+            <div class="split-component" data-split-months="${months}">${badgeBnpl}${badgeCashback}</div>
+        </div>
+    `;
+}
+
+function scheduleUltimateWidget(containerId, amount) {
+    clearTimeout(widgetMountTimers[containerId]);
+    widgetMountTimers[containerId] = setTimeout(() => {
+        mountUltimateWidget(containerId, amount);
+    }, 80);
+}
+
+async function mountUltimateWidget(containerId, amount) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    if (!hasSplitSdkConfig()) {
+        container.innerHTML = '';
+        return;
+    }
+    await ensureYandexPaySdk();
+    if (!window.YaPay) {
+        container.innerHTML = '';
+        return;
+    }
+
+    const merchantId = state.integrations?.payments?.yandex_pay_merchant_id || '';
+    const theme = state.integrations?.payments?.yandex_pay_theme || 'light';
+    const totalAmount = Math.max(1, Math.round(Number(amount || 0)));
+    const themeMap = {
+        dark: window.YaPay.WidgetTheme?.Dark || 'dark',
+        light: window.YaPay.WidgetTheme?.Light || 'light',
+    };
+
+    const paymentData = {
+        version: 4,
+        totalAmount,
+        merchantId,
+        currencyCode: window.YaPay.CurrencyCode?.Rub || 'RUB',
+        availablePaymentMethods: ['SPLIT', 'CARD'],
+    };
+
+    try {
+        container.innerHTML = '';
+        const paymentSession = await window.YaPay.createSession(paymentData, {
+            source: 'cms',
+            onPayButtonClick: () => '',
+        });
+        paymentSession.mountWidget(container, {
+            widgetType: window.YaPay.WidgetType?.Ultimate,
+            widgetTheme: themeMap[theme] || theme,
+        });
+    } catch (e) {
+        console.warn('Не удалось смонтировать YaPay Ultimate widget:', e);
+        container.innerHTML = '';
+    }
+}
+
+function calculateOrderPricing(subtotal, pointsUsedRaw) {
+    const subtotalSafe = Math.max(0, Number(subtotal || 0));
+    const loyaltyCfg = state.integrations?.loyalty || {};
+    if (!loyaltyCfg.enabled) {
+        return {
+            subtotal: subtotalSafe,
+            points_used: 0,
+            discount: 0,
+            total: subtotalSafe,
+            points_max: 0,
+            split_months: getSplitMonths(),
+            split_monthly_payment: subtotalSafe / getSplitMonths(),
+        };
+    }
+    const rate = Number(loyaltyCfg.rate || 1) || 1;
+    const maxPercent = Number(loyaltyCfg.max_percent || 30) || 30;
+    const maxDiscount = subtotalSafe * (maxPercent / 100);
+    const pointsRequested = Math.max(0, Number(pointsUsedRaw || 0));
+    const discountByPoints = pointsRequested * rate;
+    const discount = Math.min(maxDiscount, discountByPoints, subtotalSafe);
+    const pointsUsed = discount / rate;
+    const total = Math.max(0, subtotalSafe - discount);
+    const splitMonths = getSplitMonths();
+    return {
+        subtotal: subtotalSafe,
+        points_used: pointsUsed,
+        discount,
+        total,
+        points_max: maxDiscount / rate,
+        split_months: splitMonths,
+        split_monthly_payment: total / splitMonths,
+    };
 }
 
 // ══════════════════════════════════════════════
@@ -809,6 +1023,8 @@ function renderProductScreen(p) {
                     <span class="detail__price" id="detail-price">${formatPrice(currentPrice)}</span>
                     ${currentOldPrice ? `<span class="detail__old-price" id="detail-old-price">${formatPrice(currentOldPrice)}</span>` : '<span class="detail__old-price" id="detail-old-price"></span>'}
                 </div>
+                <div id="detail-split-hint">${renderSplitHint(currentPrice, 'detail__split')}</div>
+                <div id="detail-ultimate-widget" class="detail__ultimate-widget"></div>
                 ${variantsHtml}
                 <button class="btn-primary detail__add-to-cart" onclick="addCurrentToCart()">
                     В корзину
@@ -829,6 +1045,7 @@ function renderProductScreen(p) {
             img.addEventListener('error', () => img.classList.add('loaded'));
         }
     });
+    scheduleUltimateWidget('detail-ultimate-widget', currentPrice);
 }
 
 function selectVariant(index) {
@@ -845,8 +1062,13 @@ function selectVariant(index) {
     // Update price
     const $price = document.getElementById('detail-price');
     const $oldPrice = document.getElementById('detail-old-price');
+    const $splitHint = document.getElementById('detail-split-hint');
     if ($price) $price.textContent = formatPrice(state.selectedVariant.price);
     if ($oldPrice) $oldPrice.textContent = state.selectedVariant.old_price ? formatPrice(state.selectedVariant.old_price) : '';
+    if ($splitHint) {
+        $splitHint.innerHTML = renderSplitHint(state.selectedVariant.price, 'detail__split');
+    }
+    scheduleUltimateWidget('detail-ultimate-widget', state.selectedVariant.price);
 }
 
 function addCurrentToCart() {
@@ -1021,6 +1243,13 @@ function openOrderForm() {
     tomorrow.setDate(tomorrow.getDate() + 1);
     const minDate = tomorrow.toISOString().split('T')[0];
 
+    const subtotal = getCartTotal();
+    const supportsCard = !!state.integrations?.payments?.yookassa_enabled;
+    const supportsSplit = !!state.integrations?.payments?.split_enabled;
+    const loyaltyEnabled = !!state.integrations?.loyalty?.enabled;
+    const initialPricing = calculateOrderPricing(subtotal, 0);
+    state.orderPricing = initialPricing;
+
     $screenOrder.innerHTML = `
         <div class="order-form">
             <div class="cart__header">
@@ -1074,6 +1303,43 @@ function openOrderForm() {
                     <textarea class="form-input form-textarea" name="comment" placeholder="Особые пожелания, домофон, этаж..." rows="2"></textarea>
                 </div>
 
+                <div class="form-section-title">Оплата</div>
+                <div class="payment-methods">
+                    <label class="payment-methods__item">
+                        <input type="radio" name="payment_method" value="manual" checked />
+                        <div>
+                            <strong>В студии / при согласовании</strong>
+                            <span>Менеджер подтвердит заказ и подскажет способ оплаты.</span>
+                        </div>
+                    </label>
+                    <label class="payment-methods__item${supportsCard ? '' : ' payment-methods__item--disabled'}">
+                        <input type="radio" name="payment_method" value="card" ${supportsCard ? '' : 'disabled'} />
+                        <div>
+                            <strong>Онлайн картой</strong>
+                            <span>${supportsCard ? 'Перейдете на защищенную страницу ЮKassa после оформления.' : 'Появится после подключения ЮKassa.'}</span>
+                        </div>
+                    </label>
+                    <label class="payment-methods__item${supportsSplit ? '' : ' payment-methods__item--disabled'}">
+                        <input type="radio" name="payment_method" value="split" ${supportsSplit ? '' : 'disabled'} />
+                        <div>
+                            <strong>Яндекс Сплит</strong>
+                            <span>${supportsSplit ? `Платеж частями: от ${formatPrice(initialPricing.split_monthly_payment)} x ${initialPricing.split_months}.` : 'Появится после активации Сплит в ЮKassa.'}</span>
+                        </div>
+                    </label>
+                </div>
+
+                ${loyaltyEnabled ? `
+                    <div class="form-section-title">Баллы</div>
+                    <div class="form-group">
+                        <label class="form-label">Списать баллы</label>
+                        <input class="form-input" type="number" name="loyalty_points_used" id="loyalty-points-input" min="0" step="1" value="0" placeholder="0" />
+                        <div class="order-hint" id="loyalty-hint"></div>
+                    </div>
+                ` : ''}
+
+                <div id="order-split-component">${renderSplitHint(initialPricing.total, 'order-split')}</div>
+                <div id="order-ultimate-widget" class="order__ultimate-widget"></div>
+
                 <!-- Сводка заказа -->
                 <div class="order-summary">
                     <div class="order-summary__title">Ваш заказ</div>
@@ -1083,20 +1349,93 @@ function openOrderForm() {
                             <span>${formatPrice(item.price * item.quantity)}</span>
                         </div>
                     `).join('')}
+                    <div class="order-summary__item">
+                        <span>Подытог</span>
+                        <span id="order-subtotal">${formatPrice(initialPricing.subtotal)}</span>
+                    </div>
+                    <div class="order-summary__item" id="order-discount-row" style="display:${initialPricing.discount > 0 ? 'flex' : 'none'};">
+                        <span>Списано баллами</span>
+                        <span id="order-discount">-${formatPrice(initialPricing.discount)}</span>
+                    </div>
                     <div class="order-summary__total">
                         <span>Итого</span>
-                        <span>${formatPrice(getCartTotal())}</span>
+                        <span id="order-total">${formatPrice(initialPricing.total)}</span>
                     </div>
+                    <div class="order-hint" id="order-split-hint"></div>
                 </div>
+                <input type="hidden" name="subtotal" value="${initialPricing.subtotal}" />
+                <input type="hidden" name="total" id="order-total-input" value="${initialPricing.total}" />
+                <input type="hidden" name="split_months" id="order-split-months-input" value="${initialPricing.split_months}" />
 
                 <button class="btn-primary order-form__submit" type="submit" id="btn-submit-order">
-                    Отправить заказ — ${formatPrice(getCartTotal())}
+                    Отправить заказ — <span id="submit-total-label">${formatPrice(initialPricing.total)}</span>
                 </button>
             </form>
         </div>
     `;
 
+    bindOrderFormInteractions();
     showScreen('order');
+}
+
+function bindOrderFormInteractions() {
+    const form = document.getElementById('order-form');
+    if (!form) return;
+    const pointsInput = document.getElementById('loyalty-points-input');
+    const paymentInputs = form.querySelectorAll('input[name="payment_method"]');
+
+    if (pointsInput) {
+        pointsInput.addEventListener('input', () => updateOrderPricingUI());
+        pointsInput.addEventListener('change', () => updateOrderPricingUI());
+    }
+    paymentInputs.forEach((input) => input.addEventListener('change', () => updateOrderPricingUI()));
+    updateOrderPricingUI();
+}
+
+function updateOrderPricingUI() {
+    const form = document.getElementById('order-form');
+    if (!form) return;
+    const pointsInput = document.getElementById('loyalty-points-input');
+    const pointsValue = pointsInput ? Number(pointsInput.value || 0) : 0;
+    const pricing = calculateOrderPricing(getCartTotal(), pointsValue);
+    state.orderPricing = pricing;
+
+    if (pointsInput) {
+        pointsInput.value = String(Math.floor(pricing.points_used));
+        const hint = document.getElementById('loyalty-hint');
+        if (hint) hint.textContent = `Максимум к списанию: ${Math.floor(pricing.points_max)} баллов`;
+    }
+
+    const paymentMethod = (form.querySelector('input[name="payment_method"]:checked') || {}).value || 'manual';
+    const splitHint = document.getElementById('order-split-hint');
+    const splitComponent = document.getElementById('order-split-component');
+    if (splitHint) {
+        if (paymentMethod === 'split') {
+            splitHint.textContent = `Сплит: ${formatPrice(pricing.split_monthly_payment)} x ${pricing.split_months} мес.`;
+        } else {
+            splitHint.textContent = '';
+        }
+    }
+    if (splitComponent) {
+        splitComponent.innerHTML = renderSplitHint(pricing.total, 'order-split');
+    }
+    scheduleUltimateWidget('order-ultimate-widget', pricing.total);
+
+    const subtotalNode = document.getElementById('order-subtotal');
+    const discountRow = document.getElementById('order-discount-row');
+    const discountNode = document.getElementById('order-discount');
+    const totalNode = document.getElementById('order-total');
+    const totalInput = document.getElementById('order-total-input');
+    const splitMonthsInput = document.getElementById('order-split-months-input');
+    const submitLabel = document.getElementById('submit-total-label');
+
+    if (subtotalNode) subtotalNode.textContent = formatPrice(pricing.subtotal);
+    if (discountNode) discountNode.textContent = `-${formatPrice(pricing.discount)}`;
+    if (discountRow) discountRow.style.display = pricing.discount > 0 ? 'flex' : 'none';
+    if (totalNode) totalNode.textContent = formatPrice(pricing.total);
+    if (totalInput) totalInput.value = String(pricing.total);
+    if (splitMonthsInput) splitMonthsInput.value = String(pricing.split_months);
+    if (submitLabel) submitLabel.textContent = formatPrice(pricing.total);
 }
 
 async function submitOrder(e) {
@@ -1130,6 +1469,9 @@ async function submitOrder(e) {
         delivery_time: formData.get('delivery_time') || '',
         comment: formData.get('comment') || '',
         card_text: formData.get('card_text') || '',
+        payment_method: formData.get('payment_method') || 'manual',
+        loyalty_points_used: Number(formData.get('loyalty_points_used') || 0),
+        split_months: Number(formData.get('split_months') || getSplitMonths()),
         items: cart.map(item => ({
             product_id: item.product_id,
             variant_id: item.variant_id || null,
@@ -1139,7 +1481,8 @@ async function submitOrder(e) {
             quantity: item.quantity,
             picture: item.picture || null,
         })),
-        total: getCartTotal(),
+        subtotal: Number(formData.get('subtotal') || getCartTotal()),
+        total: Number(formData.get('total') || getCartTotal()),
     };
 
     try {
@@ -1152,6 +1495,12 @@ async function submitOrder(e) {
         if (!res.ok) throw new Error('Ошибка сервера');
 
         const result = await res.json();
+
+        if (result.payment?.enabled && result.payment?.confirmation_url) {
+            openExternalUrl(result.payment.confirmation_url);
+        } else if (orderData.payment_method !== 'manual' && result.payment?.enabled === false) {
+            showToast('Онлайн-оплата пока недоступна, заказ принят менеджером');
+        }
 
         // Очищаем корзину
         saveCart([]);
