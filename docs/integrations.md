@@ -8,6 +8,7 @@
 - `YOOKASSA_SHOP_ID=...`
 - `YOOKASSA_SECRET_KEY=...`
 - `YOOKASSA_RETURN_URL=https://<домен>/app`
+- `YOOKASSA_WEBHOOK_URL=https://<домен>/api/payments/yookassa/webhook`
 - `YOOKASSA_WEBHOOK_SECRET=<любой_секрет>`
 - `SPLIT_ENABLED=1`
 - `SPLIT_MONTHS_DEFAULT=4`
@@ -15,7 +16,7 @@
 - `YANDEX_PAY_MERCHANT_ID=<merchant_id>`
 - `YANDEX_PAY_THEME=light`
 
-Webhook endpoint:
+Webhook endpoint (в кабинете ЮKassa указываем `YOOKASSA_WEBHOOK_URL`):
 
 - `POST /api/payments/yookassa/webhook`
 - Header: `X-Plombir-Webhook-Token: <YOOKASSA_WEBHOOK_SECRET>`

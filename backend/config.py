@@ -17,7 +17,9 @@ YML_FEED_URL = os.getenv("YML_FEED_URL", "")
 YML_REFRESH_INTERVAL = int(os.getenv("YML_REFRESH_INTERVAL", "3600"))
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8000"))
-WEBAPP_URL = os.getenv("WEBAPP_URL", "http://localhost:8000/app")
+DEFAULT_WEBAPP_URL = "https://miniapp-placeholder.tld/app"
+DEFAULT_YOOKASSA_WEBHOOK_URL = "https://miniapp-placeholder.tld/api/payments/yookassa/webhook"
+WEBAPP_URL = os.getenv("WEBAPP_URL", DEFAULT_WEBAPP_URL)
 ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", "")  # Telegram chat_id админа для уведомлений
 
 
@@ -51,7 +53,8 @@ def _float_env(name: str, default: float) -> float:
 # Интеграции (этап 3)
 YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID", "")
 YOOKASSA_SECRET_KEY = os.getenv("YOOKASSA_SECRET_KEY", "")
-YOOKASSA_RETURN_URL = os.getenv("YOOKASSA_RETURN_URL", "")
+YOOKASSA_RETURN_URL = os.getenv("YOOKASSA_RETURN_URL", WEBAPP_URL)
+YOOKASSA_WEBHOOK_URL = os.getenv("YOOKASSA_WEBHOOK_URL", DEFAULT_YOOKASSA_WEBHOOK_URL)
 YOOKASSA_WEBHOOK_SECRET = os.getenv("YOOKASSA_WEBHOOK_SECRET", "")
 YOOKASSA_ENABLED = _bool_env("YOOKASSA_ENABLED", default=False)
 

@@ -40,7 +40,7 @@ def init_db():
             items TEXT NOT NULL,
             subtotal REAL,
             total REAL NOT NULL,
-            status TEXT DEFAULT 'new',
+            status TEXT DEFAULT 'Создан',
             payment_method TEXT DEFAULT 'manual',
             payment_status TEXT DEFAULT 'not_required',
             payment_id TEXT,
@@ -48,6 +48,9 @@ def init_db():
             split_months INTEGER,
             split_monthly_payment REAL,
             loyalty_points_used REAL DEFAULT 0,
+            inventory_state TEXT DEFAULT 'none',
+            moysklad_order_id TEXT,
+            moysklad_sync_error TEXT,
             created_at TEXT NOT NULL
         )
     """)
@@ -70,6 +73,9 @@ def _migrate_orders_schema(conn: sqlite3.Connection):
         ("split_months", "ALTER TABLE orders ADD COLUMN split_months INTEGER"),
         ("split_monthly_payment", "ALTER TABLE orders ADD COLUMN split_monthly_payment REAL"),
         ("loyalty_points_used", "ALTER TABLE orders ADD COLUMN loyalty_points_used REAL DEFAULT 0"),
+        ("inventory_state", "ALTER TABLE orders ADD COLUMN inventory_state TEXT DEFAULT 'none'"),
+        ("moysklad_order_id", "ALTER TABLE orders ADD COLUMN moysklad_order_id TEXT"),
+        ("moysklad_sync_error", "ALTER TABLE orders ADD COLUMN moysklad_sync_error TEXT"),
     ]
     for column_name, stmt in migrations:
         if column_name not in existing:
@@ -90,8 +96,9 @@ def create_order(order_data: dict) -> dict:
             items, subtotal, total, status,
             payment_method, payment_status, payment_id, payment_url,
             split_months, split_monthly_payment, loyalty_points_used,
+            inventory_state, moysklad_order_id, moysklad_sync_error,
             created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         order_data.get("telegram_user_id", ""),
         order_data.get("telegram_username", ""),
@@ -105,6 +112,7 @@ def create_order(order_data: dict) -> dict:
         json.dumps(order_data["items"], ensure_ascii=False),
         order_data.get("subtotal", order_data["total"]),
         order_data["total"],
+        order_data.get("status", "Создан"),
         order_data.get("payment_method", "manual"),
         order_data.get("payment_status", "not_required"),
         order_data.get("payment_id"),
@@ -112,6 +120,9 @@ def create_order(order_data: dict) -> dict:
         order_data.get("split_months"),
         order_data.get("split_monthly_payment"),
         order_data.get("loyalty_points_used", 0),
+        order_data.get("inventory_state", "none"),
+        order_data.get("moysklad_order_id"),
+        order_data.get("moysklad_sync_error"),
         now,
     ))
     conn.commit()
@@ -120,7 +131,7 @@ def create_order(order_data: dict) -> dict:
 
     return {
         "id": order_id,
-        "status": "new",
+        "status": order_data.get("status", "Создан"),
         "created_at": now,
         **order_data,
     }
@@ -132,6 +143,8 @@ def update_order_payment(
     payment_status: Optional[str] = None,
     payment_id: Optional[str] = None,
     payment_url: Optional[str] = None,
+    status: Optional[str] = None,
+    inventory_state: Optional[str] = None,
 ):
     conn = _get_conn()
     sets = []
@@ -145,6 +158,12 @@ def update_order_payment(
     if payment_url is not None:
         sets.append("payment_url = ?")
         values.append(payment_url)
+    if status is not None:
+        sets.append("status = ?")
+        values.append(status)
+    if inventory_state is not None:
+        sets.append("inventory_state = ?")
+        values.append(inventory_state)
     if not sets:
         conn.close()
         return
@@ -173,6 +192,42 @@ def get_orders_by_user(telegram_user_id: str) -> list:
     ).fetchall()
     conn.close()
     return [_row_to_dict(r) for r in rows]
+
+
+def list_recent_orders(limit: int = 20) -> list:
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT * FROM orders ORDER BY id DESC LIMIT ?",
+        (max(1, min(limit, 200)),),
+    ).fetchall()
+    conn.close()
+    return [_row_to_dict(r) for r in rows]
+
+
+def update_order_status(order_id: int, status: str) -> Optional[dict]:
+    conn = _get_conn()
+    conn.execute("UPDATE orders SET status = ? WHERE id = ?", (status, order_id))
+    conn.commit()
+    row = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+    conn.close()
+    return _row_to_dict(row) if row else None
+
+
+def update_order_moysklad(order_id: int, *, moysklad_order_id: Optional[str] = None, sync_error: Optional[str] = None):
+    conn = _get_conn()
+    sets = []
+    values = []
+    if moysklad_order_id is not None:
+        sets.append("moysklad_order_id = ?")
+        values.append(moysklad_order_id)
+    if sync_error is not None:
+        sets.append("moysklad_sync_error = ?")
+        values.append(sync_error)
+    if sets:
+        values.append(order_id)
+        conn.execute(f"UPDATE orders SET {', '.join(sets)} WHERE id = ?", tuple(values))
+        conn.commit()
+    conn.close()
 
 
 def _row_to_dict(row) -> dict:

@@ -29,8 +29,18 @@ from backend.config import (
     YANDEX_PAY_THEME,
 )
 from backend.parser import fetch_and_parse
-from backend.orders import init_db, create_order, get_order, get_orders_by_user, update_order_payment
+from backend.orders import (
+    init_db,
+    create_order,
+    get_order,
+    get_orders_by_user,
+    update_order_payment,
+    update_order_status,
+    update_order_moysklad,
+    list_recent_orders,
+)
 from backend.payments import create_payment, is_yookassa_ready, PaymentConfigError
+from backend.moysklad import create_customerorder, is_moysklad_ready
 from backend.ui_content import ensure_ui_storage, get_ui_content
 
 
@@ -128,6 +138,10 @@ class OrderCreate(BaseModel):
     items: List[OrderItem]
     subtotal: Optional[float] = None
     total: float
+
+
+class OrderStatusUpdate(BaseModel):
+    status: str
 
 
 # ── API endpoints ──
@@ -402,6 +416,25 @@ async def get_user_orders(telegram_user_id: str):
     return get_orders_by_user(telegram_user_id)
 
 
+@app.get("/api/admin/orders")
+async def admin_list_orders(limit: int = 30):
+    """Список последних заказов для админских инструментов."""
+    return list_recent_orders(limit=limit)
+
+
+@app.post("/api/orders/{order_id}/status")
+async def set_order_status(order_id: int, payload: OrderStatusUpdate):
+    allowed = {"Создан", "Оплачен", "Флорист", "Курьер", "Доставлен", "Отменен"}
+    next_status = (payload.status or "").strip()
+    if next_status not in allowed:
+        raise HTTPException(status_code=400, detail="Некорректный статус")
+    updated = update_order_status(order_id, next_status)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Заказ не найден")
+    asyncio.create_task(_notify_customer_status(updated))
+    return {"ok": True, "order": updated}
+
+
 @app.get("/api/ui-content")
 async def get_ui_content_endpoint():
     """Получить контент для верхнего слайдера и бегущей строки."""
@@ -434,9 +467,34 @@ async def yookassa_webhook(request: Request):
         return {"ok": True}
 
     if event in {"payment.succeeded", "payment.waiting_for_capture"}:
-        update_order_payment(order_id, payment_status=status or "succeeded", payment_id=payment_id)
+        update_order_payment(
+            order_id,
+            payment_status=status or "succeeded",
+            payment_id=payment_id,
+            status="Оплачен",
+            inventory_state="reserved",
+        )
+        order = get_order(order_id)
+        if order:
+            if is_moysklad_ready():
+                try:
+                    ms_id = await create_customerorder(order)
+                    if ms_id:
+                        update_order_moysklad(order_id, moysklad_order_id=ms_id, sync_error="")
+                except Exception as e:
+                    update_order_moysklad(order_id, sync_error=str(e)[:500])
+            asyncio.create_task(_notify_customer_status(order))
     elif event in {"payment.canceled"}:
-        update_order_payment(order_id, payment_status="canceled", payment_id=payment_id)
+        update_order_payment(
+            order_id,
+            payment_status="canceled",
+            payment_id=payment_id,
+            status="Отменен",
+            inventory_state="none",
+        )
+        order = get_order(order_id)
+        if order:
+            asyncio.create_task(_notify_customer_status(order))
     return {"ok": True}
 
 
@@ -475,19 +533,54 @@ async def _notify_admin(order: dict):
 
     text += f"\n📦 *Товары:*\n{items_text}\n💰 *Итого: {int(order['total'])} ₽*"
 
+    admin_ids = [part.strip() for part in str(ADMIN_CHAT_ID).split(",") if part.strip()]
+    if not admin_ids:
+        return
+
+    try:
+        async with httpx.AsyncClient() as client:
+            for chat_id in admin_ids:
+                await client.post(
+                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                    json={
+                        "chat_id": chat_id,
+                        "text": text,
+                        "parse_mode": "Markdown",
+                    },
+                )
+            print(f"✅ Уведомление отправлено: заказ #{order['id']}")
+    except Exception as e:
+        print(f"⚠️ Ошибка отправки уведомления: {e}")
+
+
+async def _notify_customer_status(order: dict):
+    tg_user_id = str(order.get("telegram_user_id") or "").strip()
+    if not BOT_TOKEN or not tg_user_id:
+        return
+
+    status = order.get("status") or "Создан"
+    status_map = {
+        "Создан": "Заказ создан и ожидает оплаты.",
+        "Оплачен": "Оплата получена, заказ передан флористу.",
+        "Флорист": "Флорист собирает ваш заказ.",
+        "Курьер": "Заказ передан курьеру.",
+        "Доставлен": "Заказ доставлен. Спасибо за заказ!",
+        "Отменен": "Заказ отменен.",
+    }
+    text = (
+        f"📦 Заказ #{order.get('id')}\n"
+        f"Статус: *{status}*\n"
+        f"{status_map.get(status, '')}"
+    )
+    import httpx
     try:
         async with httpx.AsyncClient() as client:
             await client.post(
                 f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-                json={
-                    "chat_id": ADMIN_CHAT_ID,
-                    "text": text,
-                    "parse_mode": "Markdown",
-                },
+                json={"chat_id": tg_user_id, "text": text, "parse_mode": "Markdown"},
             )
-            print(f"✅ Уведомление отправлено: заказ #{order['id']}")
     except Exception as e:
-        print(f"⚠️ Ошибка отправки уведомления: {e}")
+        print(f"⚠️ Ошибка отправки статуса клиенту: {e}")
 
 
 # ── Mini App (статика) ──

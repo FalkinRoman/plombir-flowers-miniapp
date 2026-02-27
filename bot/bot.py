@@ -22,6 +22,9 @@ from telegram.ext import (
     ContextTypes,
 )
 from backend.config import BOT_TOKEN, WEBAPP_URL, ADMIN_CHAT_ID
+from backend.orders import list_recent_orders, get_order, get_orders_by_user, update_order_status
+from backend.orders import update_order_moysklad
+from backend.moysklad import create_customerorder, is_moysklad_ready
 from backend.ui_content import (
     BANNERS_DIR,
     ensure_ui_storage,
@@ -110,6 +113,44 @@ async def cmd_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+def _order_status_keyboard(order_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Оплачен", callback_data=f"order_status:{order_id}:Оплачен"),
+            InlineKeyboardButton("🌿 Флорист", callback_data=f"order_status:{order_id}:Флорист"),
+        ],
+        [
+            InlineKeyboardButton("🚚 Курьер", callback_data=f"order_status:{order_id}:Курьер"),
+            InlineKeyboardButton("📬 Доставлен", callback_data=f"order_status:{order_id}:Доставлен"),
+        ],
+        [InlineKeyboardButton("❌ Отменен", callback_data=f"order_status:{order_id}:Отменен")],
+    ])
+
+
+async def _notify_customer_status_from_bot(context: ContextTypes.DEFAULT_TYPE, order: dict):
+    user_id = str(order.get("telegram_user_id") or "").strip()
+    if not user_id:
+        return
+    status = order.get("status") or "Создан"
+    status_map = {
+        "Создан": "Заказ создан и ожидает оплаты.",
+        "Оплачен": "Оплата получена, заказ передан флористу.",
+        "Флорист": "Флорист собирает ваш заказ.",
+        "Курьер": "Заказ передан курьеру.",
+        "Доставлен": "Заказ доставлен. Спасибо за заказ!",
+        "Отменен": "Заказ отменен.",
+    }
+    text = (
+        f"📦 Заказ #{order.get('id')}\n"
+        f"Статус: *{status}*\n"
+        f"{status_map.get(status, '')}"
+    )
+    try:
+        await context.bot.send_message(chat_id=user_id, text=text, parse_mode="Markdown")
+    except Exception:
+        pass
+
+
 async def cmd_admin_ui(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await _require_admin(update):
         return
@@ -134,9 +175,33 @@ async def cmd_admin_ui(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "*Важно*\n"
         "— порядок баннеров = порядок добавления (новые в конце)\n"
         "— если баннеров нет, в приложении показывается 1 заглушка\n"
-        "— если в бегущей строке останется 0 пунктов, подставится дефолтный текст",
+        "— если в бегущей строке останется 0 пунктов, подставится дефолтный текст\n\n"
+        "*Заказы*\n"
+        "`/orders` — последние заказы и быстрые статусы",
         parse_mode="Markdown",
     )
+
+
+async def cmd_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await _require_admin(update):
+        return
+    orders = list_recent_orders(limit=10)
+    if not orders:
+        await update.message.reply_text("Заказов пока нет.")
+        return
+    for order in orders:
+        line = (
+            f"📦 Заказ #{order['id']}\n"
+            f"👤 {order.get('customer_name') or '-'}\n"
+            f"📞 {order.get('customer_phone') or '-'}\n"
+            f"💰 {int(order.get('total') or 0)} ₽\n"
+            f"Статус: *{order.get('status') or 'Создан'}*"
+        )
+        await update.message.reply_text(
+            line,
+            parse_mode="Markdown",
+            reply_markup=_order_status_keyboard(order["id"]),
+        )
 
 
 async def cmd_ticker(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -266,6 +331,61 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
+    if query.data.startswith("order_status:"):
+        if not _is_admin(update):
+            await query.answer("Недостаточно прав", show_alert=True)
+            return
+        _, order_id_raw, next_status = query.data.split(":", 2)
+        try:
+            order_id = int(order_id_raw)
+        except ValueError:
+            await query.answer("Некорректный ID", show_alert=True)
+            return
+        order = update_order_status(order_id, next_status)
+        if not order:
+            await query.answer("Заказ не найден", show_alert=True)
+            return
+        # Проставляем оплату/резерв при переходе в "Оплачен" прямо из админки.
+        if next_status == "Оплачен":
+            from backend.orders import update_order_payment
+            update_order_payment(
+                order_id,
+                payment_status="succeeded",
+                status="Оплачен",
+                inventory_state="reserved",
+            )
+            order = get_order(order_id) or order
+            if order and is_moysklad_ready():
+                try:
+                    ms_id = await create_customerorder(order)
+                    if ms_id:
+                        update_order_moysklad(order_id, moysklad_order_id=ms_id, sync_error="")
+                except Exception as e:
+                    update_order_moysklad(order_id, sync_error=str(e)[:500])
+        elif next_status == "Отменен":
+            from backend.orders import update_order_payment
+            update_order_payment(
+                order_id,
+                payment_status="canceled",
+                status="Отменен",
+                inventory_state="none",
+            )
+            order = get_order(order_id) or order
+
+        await _notify_customer_status_from_bot(context, order)
+        await query.edit_message_text(
+            (
+                f"📦 Заказ #{order['id']}\n"
+                f"👤 {order.get('customer_name') or '-'}\n"
+                f"📞 {order.get('customer_phone') or '-'}\n"
+                f"💰 {int(order.get('total') or 0)} ₽\n"
+                f"Статус: *{order.get('status') or 'Создан'}*"
+            ),
+            parse_mode="Markdown",
+            reply_markup=_order_status_keyboard(order["id"]),
+        )
+        return
+
     if query.data == "contacts":
         await query.message.reply_text(
             "📍 *Plombir Flowers*\n\n"
@@ -280,12 +400,20 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif query.data == "my_orders":
-        await query.message.reply_text(
-            "📦 *Мои заказы*\n\n"
-            "Для просмотра заказов откройте каталог и перейдите в корзину.\n"
-            "История заказов будет доступна в ближайшем обновлении! 🚀",
-            parse_mode="Markdown",
-        )
+        user_id = str(update.effective_user.id) if update.effective_user else ""
+        if not user_id:
+            await query.message.reply_text("Не удалось определить пользователя.")
+            return
+        orders = get_orders_by_user(user_id)
+        if not orders:
+            await query.message.reply_text("📦 У вас пока нет заказов.")
+            return
+        lines = ["📦 *Мои заказы*"]
+        for o in orders[:10]:
+            lines.append(
+                f"• #{o['id']} — *{o.get('status') or 'Создан'}* — {int(o.get('total') or 0)} ₽"
+            )
+        await query.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 
 # ── Настройка ──
@@ -315,6 +443,7 @@ def create_bot() -> Application:
     app.add_handler(CommandHandler("banners", cmd_banners))
     app.add_handler(CommandHandler("banner_add", cmd_banner_add))
     app.add_handler(CommandHandler("banner_delete", cmd_banner_delete))
+    app.add_handler(CommandHandler("orders", cmd_orders))
 
     # Фото от админа: без подписи -> catalog, с подписью /banner_add target -> заданный target
     app.add_handler(
