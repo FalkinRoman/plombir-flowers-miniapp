@@ -268,6 +268,7 @@ async function init() {
     await loadProducts(true);
     updateCartBadge();
     setupPriceFilter();
+    await handlePaymentReturnFromUrl();
 }
 
 async function loadIntegrationsConfig() {
@@ -1497,15 +1498,16 @@ async function submitOrder(e) {
         const result = await res.json();
 
         if (result.payment?.enabled && result.payment?.confirmation_url) {
-            openExternalUrl(result.payment.confirmation_url);
+            // Заказ уже создан; перед редиректом в ЮKassa показываем промежуточный экран.
+            saveCart([]);
+            showPaymentAwaitingRedirect(result.order_id, orderData.payment_method, result.payment.confirmation_url);
+            return;
         } else if (orderData.payment_method !== 'manual' && result.payment?.enabled === false) {
             showToast('Онлайн-оплата пока недоступна, заказ принят менеджером');
         }
 
-        // Очищаем корзину
+        // Для офлайн/фолбэк-сценария заказ оформлен сразу.
         saveCart([]);
-
-        // Показываем успех
         showOrderSuccess(result.order_id);
     } catch (e) {
         console.error('Ошибка оформления:', e);
@@ -1513,6 +1515,22 @@ async function submitOrder(e) {
         btn.textContent = `Отправить заказ — ${formatPrice(getCartTotal())}`;
         showToast('Ошибка! Попробуйте ещё раз');
     }
+}
+
+function showPaymentAwaitingRedirect(orderId, paymentMethod, confirmationUrl) {
+    const methodTitle = paymentMethod === 'split' ? 'Яндекс Сплит' : 'Онлайн-оплата картой';
+    $screenSuccess.innerHTML = `
+        <div class="success">
+            <div class="success__icon">↗</div>
+            <h2 class="success__title">Переходим к оплате</h2>
+            <p class="success__text">Заказ <strong>#${orderId}</strong> создан.</p>
+            <p class="success__text">${methodTitle}. Сейчас откроется защищенная страница ЮKassa.</p>
+            <button class="btn-primary success__btn" onclick="openExternalUrl('${confirmationUrl}')">Перейти к оплате</button>
+            <button class="btn-secondary success__btn" onclick="showScreen('catalog')">Вернуться в каталог</button>
+        </div>
+    `;
+    showScreen('success');
+    setTimeout(() => openExternalUrl(confirmationUrl), 250);
 }
 
 function showOrderSuccess(orderId) {
@@ -1523,6 +1541,72 @@ function showOrderSuccess(orderId) {
             <p class="success__text">Номер заказа: <strong>#${orderId}</strong></p>
             <p class="success__text">Мы свяжемся с вами для подтверждения.</p>
             <button class="btn-primary success__btn" onclick="showScreen('catalog')">Вернуться в каталог</button>
+        </div>
+    `;
+    showScreen('success');
+}
+
+function clearPaymentParamsFromUrl() {
+    try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('order_id');
+        window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+    } catch (e) {
+        console.warn('Не удалось очистить payment-параметры URL', e);
+    }
+}
+
+async function handlePaymentReturnFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const orderIdRaw = params.get('order_id');
+    if (!orderIdRaw) return;
+    const orderId = Number(orderIdRaw);
+    if (!Number.isFinite(orderId) || orderId <= 0) {
+        clearPaymentParamsFromUrl();
+        return;
+    }
+    try {
+        const res = await fetch(`${API}/orders/${orderId}`);
+        if (!res.ok) throw new Error('order fetch failed');
+        const order = await res.json();
+        showPaymentReturnStatus(order);
+    } catch (e) {
+        console.error('Не удалось проверить статус оплаты после возврата:', e);
+        showToast('Не удалось получить статус оплаты. Проверьте заказ в "Мои заказы".');
+    } finally {
+        clearPaymentParamsFromUrl();
+    }
+}
+
+function showPaymentReturnStatus(order) {
+    const paymentStatus = String(order?.payment_status || '').toLowerCase();
+    const orderStatus = order?.status || 'Создан';
+    const isPaid = ['succeeded', 'waiting_for_capture'].includes(paymentStatus) || orderStatus === 'Оплачен';
+    const isCanceled = ['canceled'].includes(paymentStatus) || orderStatus === 'Отменен';
+    const paymentUrl = order?.payment_url || '';
+
+    let title = 'Статус оплаты';
+    let text = 'Проверяем оплату. Обычно подтверждение приходит за несколько секунд.';
+    let icon = '…';
+
+    if (isPaid) {
+        title = 'Оплата прошла успешно';
+        text = 'Спасибо! Заказ оплачен и передан в работу флористу.';
+        icon = '✓';
+    } else if (isCanceled) {
+        title = 'Оплата не завершена';
+        text = 'Платеж отменен. Можно попробовать оплатить еще раз.';
+        icon = '!';
+    }
+
+    $screenSuccess.innerHTML = `
+        <div class="success">
+            <div class="success__icon">${icon}</div>
+            <h2 class="success__title">${title}</h2>
+            <p class="success__text">Номер заказа: <strong>#${order.id}</strong></p>
+            <p class="success__text">${text}</p>
+            ${paymentUrl && !isPaid ? `<button class="btn-primary success__btn" onclick="openExternalUrl('${paymentUrl}')">Оплатить заказ</button>` : ''}
+            <button class="btn-secondary success__btn" onclick="showScreen('catalog')">Вернуться в каталог</button>
         </div>
     `;
     showScreen('success');

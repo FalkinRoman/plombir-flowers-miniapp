@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import uuid
 from typing import Any, Optional
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 
@@ -34,6 +35,20 @@ def _headers() -> dict[str, str]:
         "Idempotence-Key": str(uuid.uuid4()),
         "Content-Type": "application/json",
     }
+
+
+def _build_return_url(order_id: int) -> str:
+    """
+    Добавляем order_id в return_url, чтобы фронт после возврата мог показать фактический статус оплаты.
+    """
+    base = (YOOKASSA_RETURN_URL or "").strip()
+    if not base:
+        return base
+    parts = urlsplit(base)
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    query["order_id"] = str(order_id)
+    new_query = urlencode(query)
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, new_query, parts.fragment))
 
 
 async def create_payment(
@@ -69,7 +84,7 @@ async def create_payment(
         "capture": True,
         "confirmation": {
             "type": "redirect",
-            "return_url": YOOKASSA_RETURN_URL,
+            "return_url": _build_return_url(order_id),
         },
         "description": description,
         "metadata": {
