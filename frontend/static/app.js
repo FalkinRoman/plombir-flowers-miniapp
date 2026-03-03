@@ -1080,6 +1080,7 @@ function addCurrentToCart() {
     const item = {
         product_id: p.id,
         variant_id: v ? v.id : null,
+        product_code: (v && v.code) || p.code || p.id,
         name: p.name,
         variant_label: v ? v.label : null,
         price: v ? v.price : p.price,
@@ -1113,6 +1114,7 @@ function addToCartFromCard(product, btnEl) {
     const item = {
         product_id: product.id,
         variant_id: null,
+        product_code: product.code || product.id,
         name: product.name,
         variant_label: null,
         price: product.price,
@@ -1276,6 +1278,14 @@ function openOrderForm() {
                     <label class="form-label">Адрес доставки</label>
                     <input class="form-input" type="text" name="delivery_address" placeholder="Улица, дом, квартира" />
                 </div>
+                <div class="form-group">
+                    <label class="form-label">Тип доставки</label>
+                    <select class="form-input" name="delivery_type">
+                        <option value="Курьер">Курьер</option>
+                        <option value="Самовывоз с ул. Кирочная 8Б">Самовывоз с ул. Кирочная 8Б</option>
+                        <option value="Узнать адрес у получателя*">Узнать адрес у получателя</option>
+                    </select>
+                </div>
 
                 <div class="form-group">
                     <label class="form-label">Дата</label>
@@ -1290,6 +1300,32 @@ function openOrderForm() {
                         <option value="15:00–18:00">15:00–18:00</option>
                         <option value="18:00–21:00">18:00–21:00</option>
                     </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Получатель</label>
+                    <input class="form-input" type="text" name="recipient_name" placeholder="Имя получателя" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Телефон получателя</label>
+                    <input class="form-input" type="tel" name="recipient_phone" placeholder="+7 (___) ___-__-__" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Как связаться для подтверждения</label>
+                    <select class="form-input" name="contact_method">
+                        <option value="Telegram">Telegram</option>
+                        <option value="WhatsApp">WhatsApp</option>
+                        <option value="Связываться не нужно (только в случае необходимости пересогласовать состав заказа)">
+                            Связываться не нужно
+                        </option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Никнейм в Telegram</label>
+                    <input class="form-input" type="text" name="telegram_nickname" placeholder="@username" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Комментарий курьеру</label>
+                    <textarea class="form-input form-textarea" name="courier_comment" placeholder="Подъезд, домофон, этаж..." rows="2"></textarea>
                 </div>
 
                 <div class="form-section-title">Дополнительно</div>
@@ -1468,6 +1504,12 @@ async function submitOrder(e) {
         delivery_address: formData.get('delivery_address') || '',
         delivery_date: formData.get('delivery_date') || '',
         delivery_time: formData.get('delivery_time') || '',
+        delivery_type: formData.get('delivery_type') || '',
+        contact_method: formData.get('contact_method') || '',
+        recipient_name: formData.get('recipient_name') || '',
+        recipient_phone: formData.get('recipient_phone') || '',
+        courier_comment: formData.get('courier_comment') || '',
+        telegram_nickname: formData.get('telegram_nickname') || '',
         comment: formData.get('comment') || '',
         card_text: formData.get('card_text') || '',
         payment_method: formData.get('payment_method') || 'manual',
@@ -1476,6 +1518,7 @@ async function submitOrder(e) {
         items: cart.map(item => ({
             product_id: item.product_id,
             variant_id: item.variant_id || null,
+            product_code: item.product_code || item.product_id,
             name: item.name,
             variant_label: item.variant_label || null,
             price: item.price,

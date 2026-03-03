@@ -17,10 +17,10 @@ YML_FEED_URL = os.getenv("YML_FEED_URL", "")
 YML_REFRESH_INTERVAL = int(os.getenv("YML_REFRESH_INTERVAL", "3600"))
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8000"))
-DEFAULT_WEBAPP_URL = "https://miniapp-placeholder.tld/app"
-DEFAULT_YOOKASSA_WEBHOOK_URL = "https://miniapp-placeholder.tld/api/payments/yookassa/webhook"
+DEFAULT_WEBAPP_URL = "https://app-plombirflowers.ru/app"
+DEFAULT_YOOKASSA_WEBHOOK_URL = "https://app-plombirflowers.ru/api/payments/yookassa/webhook"
 WEBAPP_URL = os.getenv("WEBAPP_URL", DEFAULT_WEBAPP_URL)
-ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", "")  # Telegram chat_id админа для уведомлений
+ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", "1196141773")  # Telegram chat_id админа для уведомлений
 
 
 def _bool_env(name: str, default: bool = False) -> bool:
@@ -61,7 +61,13 @@ YOOKASSA_ENABLED = _bool_env("YOOKASSA_ENABLED", default=False)
 MOYSKLAD_TOKEN = os.getenv("MOYSKLAD_TOKEN", "")
 MOYSKLAD_ORG_ID = os.getenv("MOYSKLAD_ORG_ID", "")
 MOYSKLAD_STORE_ID = os.getenv("MOYSKLAD_STORE_ID", "")
+MOYSKLAD_GROUP_ID = os.getenv("MOYSKLAD_GROUP_ID", "")
+MOYSKLAD_SALES_CHANNEL_ID = os.getenv("MOYSKLAD_SALES_CHANNEL_ID", "")
+MOYSKLAD_DELIVERY_PRODUCT_CODE = os.getenv("MOYSKLAD_DELIVERY_PRODUCT_CODE", "")
 MOYSKLAD_ENABLED = _bool_env("MOYSKLAD_ENABLED", default=False)
+
+TILDA_MOYSKLAD_WEBHOOK_ENABLED = _bool_env("TILDA_MOYSKLAD_WEBHOOK_ENABLED", default=True)
+TILDA_MOYSKLAD_WEBHOOK_TOKEN = os.getenv("TILDA_MOYSKLAD_WEBHOOK_TOKEN", "")
 
 SPLIT_ENABLED = _bool_env("SPLIT_ENABLED", default=True)
 SPLIT_MONTHS_DEFAULT = _int_env("SPLIT_MONTHS_DEFAULT", default=4)

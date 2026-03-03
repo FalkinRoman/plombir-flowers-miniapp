@@ -35,6 +35,9 @@ Webhook endpoint (в кабинете ЮKassa указываем `YOOKASSA_WEBHO
 - `MOYSKLAD_TOKEN=...`
 - `MOYSKLAD_ORG_ID=...`
 - `MOYSKLAD_STORE_ID=...`
+- `MOYSKLAD_GROUP_ID=...` (опционально)
+- `MOYSKLAD_SALES_CHANNEL_ID=...` (опционально)
+- `MOYSKLAD_DELIVERY_PRODUCT_CODE=...` (товар "доставка", если нужен отдельной позицией)
 
 В этой версии флаг уже проброшен в публичный конфиг API, чтобы фронт/бэк могли включать интеграцию без изменения кода.
 
@@ -51,6 +54,20 @@ Webhook endpoint (в кабинете ЮKassa указываем `YOOKASSA_WEBHO
 Фронт использует официальный web-sdk Яндекс Пэй/Сплит:
 - подключается `pay.js`,
 - в карточках/товаре рендерится компонент `yandex-pay-badge`.
+
+## 5) Legacy webhook (совместимость со старой Tilda-схемой)
+
+Если нужно принимать старый payload из кастомного php-скрипта:
+
+- `TILDA_MOYSKLAD_WEBHOOK_ENABLED=1`
+- `TILDA_MOYSKLAD_WEBHOOK_TOKEN=<секрет>`
+- endpoint: `POST /api/integrations/tilda-moysklad/webhook`
+- header: `Token: <TILDA_MOYSKLAD_WEBHOOK_TOKEN>`
+
+Бэкенд:
+- принимает payload старого формата,
+- создает заказ в локальной БД,
+- отправляет заказ в МойСклад по правилам "одиночные по коду / групповые как ручная замена".
 
 ## 5) Что остается от заказчика
 

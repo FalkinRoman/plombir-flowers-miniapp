@@ -35,6 +35,12 @@ def init_db():
             delivery_address TEXT,
             delivery_date TEXT,
             delivery_time TEXT,
+            delivery_type TEXT,
+            contact_method TEXT,
+            recipient_name TEXT,
+            recipient_phone TEXT,
+            courier_comment TEXT,
+            telegram_nickname TEXT,
             comment TEXT,
             card_text TEXT,
             items TEXT NOT NULL,
@@ -76,6 +82,12 @@ def _migrate_orders_schema(conn: sqlite3.Connection):
         ("inventory_state", "ALTER TABLE orders ADD COLUMN inventory_state TEXT DEFAULT 'none'"),
         ("moysklad_order_id", "ALTER TABLE orders ADD COLUMN moysklad_order_id TEXT"),
         ("moysklad_sync_error", "ALTER TABLE orders ADD COLUMN moysklad_sync_error TEXT"),
+        ("delivery_type", "ALTER TABLE orders ADD COLUMN delivery_type TEXT"),
+        ("contact_method", "ALTER TABLE orders ADD COLUMN contact_method TEXT"),
+        ("recipient_name", "ALTER TABLE orders ADD COLUMN recipient_name TEXT"),
+        ("recipient_phone", "ALTER TABLE orders ADD COLUMN recipient_phone TEXT"),
+        ("courier_comment", "ALTER TABLE orders ADD COLUMN courier_comment TEXT"),
+        ("telegram_nickname", "ALTER TABLE orders ADD COLUMN telegram_nickname TEXT"),
     ]
     for column_name, stmt in migrations:
         if column_name not in existing:
@@ -92,13 +104,14 @@ def create_order(order_data: dict) -> dict:
             telegram_user_id, telegram_username,
             customer_name, customer_phone,
             delivery_address, delivery_date, delivery_time,
+            delivery_type, contact_method, recipient_name, recipient_phone, courier_comment, telegram_nickname,
             comment, card_text,
             items, subtotal, total, status,
             payment_method, payment_status, payment_id, payment_url,
             split_months, split_monthly_payment, loyalty_points_used,
             inventory_state, moysklad_order_id, moysklad_sync_error,
             created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         order_data.get("telegram_user_id", ""),
         order_data.get("telegram_username", ""),
@@ -107,6 +120,12 @@ def create_order(order_data: dict) -> dict:
         order_data.get("delivery_address", ""),
         order_data.get("delivery_date", ""),
         order_data.get("delivery_time", ""),
+        order_data.get("delivery_type", ""),
+        order_data.get("contact_method", ""),
+        order_data.get("recipient_name", ""),
+        order_data.get("recipient_phone", ""),
+        order_data.get("courier_comment", ""),
+        order_data.get("telegram_nickname", ""),
         order_data.get("comment", ""),
         order_data.get("card_text", ""),
         json.dumps(order_data["items"], ensure_ascii=False),

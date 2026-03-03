@@ -163,6 +163,7 @@ async def fetch_and_parse() -> dict:
             "description": _text(offer, "description"),
             "price": _float(offer, "price"),
             "old_price": _float(offer, "oldprice"),
+            "code": _text(offer, "vendorCode") or offer.get("id"),
             "category_id": cat_id,
             "url": _text(offer, "url"),
             "pictures": [pic.text.strip() for pic in offer.findall("picture") if pic.text],
@@ -251,6 +252,7 @@ def _group_variants(raw_offers: list) -> list:
                 "description_html": p["description"] or "",
                 "price": p["price"],
                 "old_price": p["old_price"],
+                "code": p.get("code") or base_id,
                 "category_id": p["category_id"],
                 "url": p["url"].split("?")[0] if p["url"] else None,
                 "pictures": p["pictures"],
@@ -282,6 +284,7 @@ def _group_variants(raw_offers: list) -> list:
                     "label": variant_label,
                     "price": v["price"],
                     "old_price": v["old_price"],
+                    "code": v.get("code") or v["id"],
                     "params": v["params"],
                 })
 
@@ -298,6 +301,7 @@ def _group_variants(raw_offers: list) -> list:
                 "price": min_price,
                 "price_max": max_price if max_price != min_price else None,
                 "old_price": first["old_price"],
+                "code": first.get("code") or base_id,
                 "category_id": first["category_id"],
                 "url": first["url"].split("?")[0] if first["url"] else None,
                 "pictures": first["pictures"],

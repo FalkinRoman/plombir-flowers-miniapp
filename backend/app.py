@@ -24,6 +24,9 @@ from backend.config import (
     LOYALTY_MAX_PERCENT,
     LOYALTY_RATE,
     MOYSKLAD_ENABLED,
+    MOYSKLAD_DELIVERY_PRODUCT_CODE,
+    TILDA_MOYSKLAD_WEBHOOK_ENABLED,
+    TILDA_MOYSKLAD_WEBHOOK_TOKEN,
     YANDEX_PAY_SDK_URL,
     YANDEX_PAY_MERCHANT_ID,
     YANDEX_PAY_THEME,
@@ -115,6 +118,7 @@ app.add_middleware(
 class OrderItem(BaseModel):
     product_id: str
     variant_id: Optional[str] = None
+    product_code: Optional[str] = None
     name: str
     variant_label: Optional[str] = None
     price: float
@@ -130,6 +134,12 @@ class OrderCreate(BaseModel):
     delivery_address: Optional[str] = ""
     delivery_date: Optional[str] = ""
     delivery_time: Optional[str] = ""
+    delivery_type: Optional[str] = ""
+    contact_method: Optional[str] = ""
+    recipient_name: Optional[str] = ""
+    recipient_phone: Optional[str] = ""
+    courier_comment: Optional[str] = ""
+    telegram_nickname: Optional[str] = ""
     comment: Optional[str] = ""
     card_text: Optional[str] = ""
     payment_method: Optional[str] = "manual"  # manual | card | split
@@ -313,6 +323,7 @@ async def get_products(
             "category_id": p["category_id"],
             "category_ids": p.get("category_ids", [p["category_id"]]),
             "picture": p["pictures"][0] if p["pictures"] else None,
+            "code": p.get("code") or p["id"],
             "count": p["count"],
             "has_variants": len(p["variants"]) > 0,
         })
@@ -399,6 +410,122 @@ async def create_new_order(order: OrderCreate):
     asyncio.create_task(_notify_admin(result))
 
     return response
+
+
+def _to_float(value, default=0.0) -> float:
+    try:
+        if value is None:
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _to_int(value, default=1) -> int:
+    try:
+        if value is None:
+            return default
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+@app.post("/api/integrations/tilda-moysklad/webhook")
+async def tilda_moysklad_webhook(request: Request):
+    """
+    Совместимость со старой кастомной интеграцией Tilda -> МойСклад.
+    Принимаем payload в стиле request.php и создаем заказ в нашей БД + МойСклад.
+    """
+    if not TILDA_MOYSKLAD_WEBHOOK_ENABLED:
+        raise HTTPException(status_code=404, detail="Webhook disabled")
+
+    if TILDA_MOYSKLAD_WEBHOOK_TOKEN:
+        token = request.headers.get("Token", "")
+        if token != TILDA_MOYSKLAD_WEBHOOK_TOKEN:
+            raise HTTPException(status_code=403, detail="Invalid webhook token")
+
+    payload = await request.json()
+    payment = payload.get("payment") or {}
+    products = payment.get("products") or []
+    if not isinstance(products, list) or not products:
+        raise HTTPException(status_code=400, detail="No products in payload")
+
+    items = []
+    for p in products:
+        if not isinstance(p, dict):
+            continue
+        code = (
+            p.get("externalid")
+            or p.get("external_id")
+            or p.get("code")
+            or p.get("sku")
+            or p.get("id")
+            or p.get("name")
+        )
+        items.append({
+            "product_id": str(p.get("id") or code or ""),
+            "variant_id": p.get("variant_id"),
+            "product_code": str(code or ""),
+            "name": str(p.get("name") or "Товар"),
+            "variant_label": p.get("variant_label"),
+            "price": _to_float(p.get("price"), 0.0),
+            "quantity": _to_int(p.get("quantity"), 1),
+            "picture": p.get("picture"),
+        })
+
+    # Доставка как отдельная позиция (как в старом php-скрипте), если есть код.
+    delivery_price = _to_float(payment.get("delivery_price"), 0.0)
+    if delivery_price > 0 and MOYSKLAD_DELIVERY_PRODUCT_CODE:
+        items.append({
+            "product_id": f"delivery-{MOYSKLAD_DELIVERY_PRODUCT_CODE}",
+            "variant_id": None,
+            "product_code": MOYSKLAD_DELIVERY_PRODUCT_CODE,
+            "name": "Доставка",
+            "variant_label": None,
+            "price": delivery_price,
+            "quantity": 1,
+            "picture": None,
+        })
+
+    total = _to_float(payment.get("total"), 0.0) or _to_float(payment.get("subtotal"), 0.0)
+    if total <= 0:
+        total = sum(_to_float(i.get("price")) * _to_int(i.get("quantity"), 1) for i in items)
+
+    order_data = {
+        "telegram_user_id": "",
+        "telegram_username": "",
+        "customer_name": str(payload.get("name") or payload.get("customer_name") or "Клиент"),
+        "customer_phone": str(payload.get("phone") or payload.get("customer_phone") or ""),
+        "delivery_address": str(payload.get("address") or ""),
+        "delivery_date": str(payload.get("delivery_date") or payload.get("Дата_доставки") or ""),
+        "delivery_time": str(payload.get("time") or ""),
+        "delivery_type": str(payment.get("delivery") or payload.get("delivery_type") or "Курьер"),
+        "contact_method": str(payload.get("order_apply") or payload.get("contact_method") or "Telegram"),
+        "recipient_name": str(payload.get("receiver_name") or payload.get("recipient_name") or ""),
+        "recipient_phone": str(payload.get("receiver_phone") or payload.get("recipient_phone") or ""),
+        "courier_comment": str(payload.get("couriercomment") or payload.get("courier_comment") or ""),
+        "telegram_nickname": str(payload.get("telegram_name") or payload.get("telegram_nickname") or ""),
+        "comment": str(payload.get("comment") or ""),
+        "card_text": str(payload.get("cart") or payload.get("card_text") or ""),
+        "items": items,
+        "subtotal": _to_float(payment.get("subtotal"), total),
+        "total": total,
+        "status": "Создан",
+        "payment_method": "manual",
+        "payment_status": "not_required",
+    }
+    created = create_order(order_data)
+
+    ms_id = None
+    ms_error = ""
+    if is_moysklad_ready():
+        try:
+            ms_id = await create_customerorder(created)
+        except Exception as e:
+            ms_error = str(e)[:500]
+    update_order_moysklad(created["id"], moysklad_order_id=ms_id, sync_error=ms_error)
+
+    return {"ok": True, "order_id": created["id"], "moysklad_order_id": ms_id}
 
 
 @app.get("/api/orders/{order_id}")
@@ -521,11 +648,21 @@ async def _notify_admin(order: dict):
     )
     if order.get("delivery_address"):
         text += f"📍 {order['delivery_address']}\n"
+    if order.get("delivery_type"):
+        text += f"🚚 Тип доставки: {order['delivery_type']}\n"
     if order.get("delivery_date"):
         text += f"📅 {order['delivery_date']}"
         if order.get("delivery_time"):
             text += f" {order['delivery_time']}"
         text += "\n"
+    if order.get("recipient_name"):
+        text += f"🎁 Получатель: {order['recipient_name']}\n"
+    if order.get("recipient_phone"):
+        text += f"📲 Тел. получателя: {order['recipient_phone']}\n"
+    if order.get("contact_method"):
+        text += f"☎️ Связь: {order['contact_method']}\n"
+    if order.get("courier_comment"):
+        text += f"🛵 Курьеру: {order['courier_comment']}\n"
     if order.get("card_text"):
         text += f"💌 Открытка: {order['card_text']}\n"
     if order.get("comment"):
