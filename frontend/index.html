@@ -19,11 +19,13 @@
     <div id="app">
         <!-- Header -->
         <header class="header">
+            <!--
             <button class="header__menu" id="btn-menu" onclick="openMenu()" aria-label="Открыть меню">
                 <span></span>
                 <span></span>
                 <span></span>
             </button>
+            -->
             <button class="header__logo" id="header-logo" onclick="showScreen('catalog')" aria-label="На главную">
                 <div class="header__logo-wrap">
                     <img src="/app/static/img/IMG_0415.PNG.webp" alt="Plombir Flowers"
@@ -43,16 +45,16 @@
 
         <!-- ===== CATALOG SCREEN ===== -->
         <div class="screen" id="screen-catalog">
-            <!-- Hero slider -->
+            <!--
             <section class="hero" id="hero">
                 <div class="hero__track" id="hero-track"></div>
                 <div class="hero__dots" id="hero-dots"></div>
             </section>
 
-            <!-- Delivery ticker -->
             <section class="ticker" aria-label="Информация о доставке">
                 <div class="ticker__inner" id="ticker-inner"></div>
             </section>
+            -->
 
             <!-- Categories -->
             <nav class="categories" id="categories">
@@ -103,7 +105,8 @@
         <!-- ===== INFO SCREEN ===== -->
         <div class="screen" id="screen-info" style="display:none;"></div>
 
-        <!-- ===== SIDE MENU ===== -->
+        <!--
+        ===== SIDE MENU =====
         <div class="side-menu-overlay" id="side-menu-overlay" onclick="closeMenu()"></div>
         <aside class="side-menu" id="side-menu" aria-label="Боковое меню">
             <div class="side-menu__header">
@@ -134,6 +137,7 @@
                 <a class="side-menu__call" href="tel:+79819672833">Позвонить нам</a>
             </div>
         </aside>
+        -->
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
