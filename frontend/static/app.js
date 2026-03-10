@@ -98,6 +98,7 @@ let contactsMapInstance = null;
 let heroSwiper = null;
 let yandexPayScriptPromise = null;
 const widgetMountTimers = {};
+let splitHintsRefreshTimer = null;
 
 // ── Cart (localStorage) ──
 function getCart() {
@@ -295,16 +296,22 @@ function hasSplitSdkConfig() {
 
 async function ensureYandexPaySdk() {
     if (!hasSplitSdkConfig()) return;
-    if (window.YaPay) return;
+    if (window.YaPay && isYandexBadgeReady()) return;
     if (yandexPayScriptPromise) return yandexPayScriptPromise;
     const existing = Array.from(document.scripts).find((s) => (s.src || '').includes('pay.yandex.ru/sdk/v1/pay.js'));
     if (existing) {
-        yandexPayScriptPromise = new Promise((resolve) => {
+        yandexPayScriptPromise = new Promise(async (resolve) => {
             if (window.YaPay) {
+                await waitForYandexBadgeDefinition();
+                queueSplitHintsRefresh();
                 resolve();
                 return;
             }
-            existing.addEventListener('load', () => resolve(), { once: true });
+            existing.addEventListener('load', async () => {
+                await waitForYandexBadgeDefinition();
+                queueSplitHintsRefresh();
+                resolve();
+            }, { once: true });
             existing.addEventListener('error', () => resolve(), { once: true });
         });
         return yandexPayScriptPromise;
@@ -313,16 +320,47 @@ async function ensureYandexPaySdk() {
         const script = document.createElement('script');
         script.src = state.integrations.payments.yandex_pay_sdk_url;
         script.async = true;
-        script.onload = () => {
-            if (window.customElements?.get('yandex-pay-badge')) {
-                document.documentElement.classList.add('split-sdk-ready');
-            }
+        script.onload = async () => {
+            await waitForYandexBadgeDefinition();
+            queueSplitHintsRefresh();
             resolve();
         };
         script.onerror = () => resolve();
         document.head.appendChild(script);
     });
     return yandexPayScriptPromise;
+}
+
+function isYandexBadgeReady() {
+    return !!window.customElements?.get('yandex-pay-badge');
+}
+
+async function waitForYandexBadgeDefinition(timeoutMs = 3500) {
+    if (isYandexBadgeReady()) {
+        document.documentElement.classList.add('split-sdk-ready');
+        return true;
+    }
+    if (!window.customElements?.whenDefined) return false;
+    await Promise.race([
+        window.customElements.whenDefined('yandex-pay-badge'),
+        new Promise((resolve) => setTimeout(resolve, timeoutMs)),
+    ]);
+    if (isYandexBadgeReady()) {
+        document.documentElement.classList.add('split-sdk-ready');
+        return true;
+    }
+    return false;
+}
+
+function queueSplitHintsRefresh() {
+    clearTimeout(splitHintsRefreshTimer);
+    splitHintsRefreshTimer = setTimeout(() => {
+        document.querySelectorAll('.js-split-hint').forEach((node) => {
+            const amount = Number(node.dataset.splitPrice || 0);
+            const months = Number(node.dataset.splitMonths || getSplitMonths());
+            node.innerHTML = buildSplitHintMarkup(amount, months);
+        });
+    }, 80);
 }
 
 // ══════════════════════════════════════════════
@@ -771,6 +809,7 @@ function renderProducts(items, reset) {
         $products.innerHTML = '';
     }
     _renderCards(items);
+    queueSplitHintsRefresh();
 }
 
 function _renderCards(items) {
@@ -857,18 +896,29 @@ function getSplitMonthly(price) {
 function renderSplitHint(price, className) {
     if (!state.integrations?.payments?.split_enabled) return '';
     const months = getSplitMonths();
+    const amount = Math.max(1, Math.round(Number(price || 0)));
+    return `
+        <div class="${className} js-split-hint" data-split-price="${amount}" data-split-months="${months}">
+            ${buildSplitHintMarkup(amount, months)}
+        </div>
+    `;
+}
+
+function buildSplitHintMarkup(amount, months) {
     const merchantId = state.integrations?.payments?.yandex_pay_merchant_id || '';
     const theme = state.integrations?.payments?.yandex_pay_theme || 'light';
-    const amount = Math.max(1, Math.round(Number(price || 0)));
-    const badgeBnpl = merchantId
-        ? `<yandex-pay-badge type="bnpl" amount="${amount}" merchant-id="${merchantId}" theme="${theme}" size="s" align="left" color="primary"></yandex-pay-badge>`
-        : '';
-    const badgeCashback = merchantId
-        ? `<yandex-pay-badge type="cashback" amount="${amount}" merchant-id="${merchantId}" theme="${theme}" size="s" align="left" color="primary"></yandex-pay-badge>`
-        : '';
+    if (merchantId && isYandexBadgeReady()) {
+        return `
+            <div class="split-component" data-split-months="${months}">
+                <yandex-pay-badge type="bnpl" amount="${amount}" merchant-id="${merchantId}" theme="${theme}" size="s" align="left" color="primary"></yandex-pay-badge>
+                <yandex-pay-badge type="cashback" amount="${amount}" merchant-id="${merchantId}" theme="${theme}" size="s" align="left" color="primary"></yandex-pay-badge>
+            </div>
+        `;
+    }
     return `
-        <div class="${className}">
-            <div class="split-component" data-split-months="${months}">${badgeBnpl}${badgeCashback}</div>
+        <div class="split-component split-component--fallback" data-split-months="${months}">
+            <span>Сплит: от ${formatPrice(amount / months)} x ${months}</span>
+            <span>Кешбэк в Яндекс Пэй</span>
         </div>
     `;
 }

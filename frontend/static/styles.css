@@ -35,6 +35,13 @@ body {
     overflow-x: hidden;
 }
 
+#app {
+    width: 100%;
+    max-width: 560px;
+    margin: 0 auto;
+    background: var(--bg);
+}
+
 /* ══════════════════════════════════════════════
    HEADER — минимализм как на сайте
    ══════════════════════════════════════════════ */
@@ -1286,6 +1293,12 @@ body.menu-open {
     flex-direction: column;
     align-items: flex-start;
     gap: 6px;
+}
+
+.split-component--fallback {
+    color: #6b6b6b;
+    font-size: 11px;
+    line-height: 1.35;
 }
 
 .product-card__price--old {
