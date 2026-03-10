@@ -359,6 +359,7 @@ function queueSplitHintsRefresh() {
             const amount = Number(node.dataset.splitPrice || 0);
             const months = Number(node.dataset.splitMonths || getSplitMonths());
             node.innerHTML = buildSplitHintMarkup(amount, months);
+            scheduleSplitFallbackGuard(node, amount, months);
         });
     }, 80);
 }
@@ -904,6 +905,46 @@ function renderSplitHint(price, className) {
     `;
 }
 
+function buildSplitFallbackMarkup(amount, months) {
+    return `
+        <div class="split-component split-component--fallback" data-split-months="${months}">
+            <span>Сплит: от ${formatPrice(amount / months)} x ${months}</span>
+            <span>Кешбэк в Яндекс Пэй</span>
+        </div>
+    `;
+}
+
+function hasVisibleYandexBadge(node) {
+    const badges = node.querySelectorAll('yandex-pay-badge');
+    if (!badges.length) return false;
+    return Array.from(badges).some((badge) => {
+        const rect = badge.getBoundingClientRect();
+        const hasRect = rect.width > 0 && rect.height > 0;
+        const hasBox = badge.offsetWidth > 0 && badge.offsetHeight > 0;
+        const hidden = badge.hasAttribute('hidden') || badge.getAttribute('aria-hidden') === 'true';
+        return (hasRect || hasBox) && !hidden;
+    });
+}
+
+function scheduleSplitFallbackGuard(node, amount, months) {
+    if (!node || !node.isConnected) return;
+    if (!isYandexBadgeReady()) return;
+    if (!node.querySelector('.split-component') || node.querySelector('.split-component--fallback')) return;
+    let attempts = 0;
+    const delays = [350, 1200, 2600];
+    const probe = () => {
+        if (!node.isConnected) return;
+        if (hasVisibleYandexBadge(node)) return;
+        if (attempts >= delays.length - 1) {
+            node.innerHTML = buildSplitFallbackMarkup(amount, months);
+            return;
+        }
+        attempts += 1;
+        setTimeout(probe, delays[attempts]);
+    };
+    setTimeout(probe, delays[attempts]);
+}
+
 function buildSplitHintMarkup(amount, months) {
     const merchantId = state.integrations?.payments?.yandex_pay_merchant_id || '';
     const theme = state.integrations?.payments?.yandex_pay_theme || 'light';
@@ -915,12 +956,7 @@ function buildSplitHintMarkup(amount, months) {
             </div>
         `;
     }
-    return `
-        <div class="split-component split-component--fallback" data-split-months="${months}">
-            <span>Сплит: от ${formatPrice(amount / months)} x ${months}</span>
-            <span>Кешбэк в Яндекс Пэй</span>
-        </div>
-    `;
+    return buildSplitFallbackMarkup(amount, months);
 }
 
 function scheduleUltimateWidget(containerId, amount) {
