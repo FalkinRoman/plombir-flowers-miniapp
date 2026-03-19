@@ -11,7 +11,7 @@ import datetime as dt
 import httpx
 
 from backend.config import MOYSKLAD_ENABLED, MOYSKLAD_ORG_ID, MOYSKLAD_TOKEN, MOYSKLAD_STORE_ID
-from backend.config import MOYSKLAD_GROUP_ID, MOYSKLAD_SALES_CHANNEL_ID
+from backend.config import MOYSKLAD_GROUP_ID, MOYSKLAD_SALES_CHANNEL_ID, MOYSKLAD_DEFAULT_AGENT_ID
 
 MS_API_BASE = "https://api.moysklad.ru/api/remap/1.2"
 MS_CURRENCY_HREF = f"{MS_API_BASE}/entity/currency/22a8698c-9708-11ec-0a80-099a001a3a8a"
@@ -101,6 +101,14 @@ async def create_customerorder(order: dict) -> Optional[str]:
         },
         "attributes": _build_attributes(order),
     }
+    if MOYSKLAD_DEFAULT_AGENT_ID:
+        payload["agent"] = {
+            "meta": {
+                "href": f"{MS_API_BASE}/entity/counterparty/{MOYSKLAD_DEFAULT_AGENT_ID}",
+                "type": "counterparty",
+                "mediaType": "application/json",
+            }
+        }
     if MOYSKLAD_STORE_ID:
         payload["store"] = {
             "meta": {

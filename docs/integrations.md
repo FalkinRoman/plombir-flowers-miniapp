@@ -38,6 +38,7 @@ Webhook endpoint (в кабинете ЮKassa указываем `YOOKASSA_WEBHO
 - `MOYSKLAD_GROUP_ID=...` (опционально)
 - `MOYSKLAD_SALES_CHANNEL_ID=...` (опционально)
 - `MOYSKLAD_DELIVERY_PRODUCT_CODE=...` (товар "доставка", если нужен отдельной позицией)
+- `MOYSKLAD_DEFAULT_AGENT_ID=...` (обязательный контрагент для `customerorder`)
 
 В этой версии флаг уже проброшен в публичный конфиг API, чтобы фронт/бэк могли включать интеграцию без изменения кода.
 
