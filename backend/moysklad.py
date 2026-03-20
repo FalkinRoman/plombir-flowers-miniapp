@@ -89,8 +89,9 @@ async def create_customerorder(order: dict) -> Optional[str]:
             "Групповые позиции (ручная замена менеджером): " + ", ".join(str(x) for x in requires_manual_replace)
         )
 
+    order_name = f"TG-{order.get('id')}"
     payload: dict[str, Any] = {
-        "name": f"TG-{order.get('id')}",
+        "name": order_name,
         "description": "\n".join(description_lines)[:4096],
         "organization": {
             "meta": {
@@ -139,11 +140,19 @@ async def create_customerorder(order: dict) -> Optional[str]:
         payload["positions"] = positions
 
     async with httpx.AsyncClient(timeout=20.0) as client:
+        existing_id = await _find_customerorder_id_by_name(client, order_name)
+        if existing_id:
+            return existing_id
         resp = await client.post(
             f"{MS_API_BASE}/entity/customerorder",
             headers=_headers(),
             json=payload,
         )
+        # Заказ с таким name уже существует: возвращаем существующий id вместо падения.
+        if resp.status_code == 412:
+            existing_id = await _find_customerorder_id_by_name(client, order_name)
+            if existing_id:
+                return existing_id
         resp.raise_for_status()
         data = resp.json()
         return data.get("id")
@@ -182,7 +191,34 @@ async def _build_positions(order: dict) -> list[dict[str, Any]]:
                 "price": int(round(max(price, 0) * 100)),
                 "assortment": {"meta": assortment_meta},
             })
+        if not positions:
+            # Fallback: если коды товаров не пришли, создаем одну агрегированную позицию.
+            total = float(order.get("total") or 0)
+            fallback_meta = await _get_or_create_product_meta(
+                client,
+                code="MINIAPP-FALLBACK",
+                name="Mini App заказ",
+                price=total,
+            )
+            if fallback_meta:
+                positions.append({
+                    "quantity": 1.0,
+                    "price": int(round(max(total, 0) * 100)),
+                    "assortment": {"meta": fallback_meta},
+                })
     return positions
+
+
+async def _find_customerorder_id_by_name(client: httpx.AsyncClient, name: str) -> Optional[str]:
+    encoded = quote(name, safe="")
+    url = f"{MS_API_BASE}/entity/customerorder?filter=name={encoded}&limit=1"
+    resp = await client.get(url, headers=_headers())
+    if resp.status_code >= 400:
+        return None
+    rows = (resp.json() or {}).get("rows") or []
+    if not rows:
+        return None
+    return (rows[0] or {}).get("id")
 
 
 async def _find_product_meta_by_code(client: httpx.AsyncClient, code: str) -> Optional[dict[str, Any]]:
