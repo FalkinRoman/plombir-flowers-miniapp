@@ -89,7 +89,9 @@ async def create_customerorder(order: dict) -> Optional[str]:
             "Групповые позиции (ручная замена менеджером): " + ", ".join(str(x) for x in requires_manual_replace)
         )
 
-    order_name = f"TG-{order.get('id')}"
+    # Префикс MA- (Mini App), не TG-: в МойСклад уже есть заказы вида TG-N (витрина/другие потоки).
+    # Иначе идемпотентность по имени подцепляла бы чужой документ без agent/salesChannel.
+    order_name = f"MA-{order.get('id')}"
     payload: dict[str, Any] = {
         "name": order_name,
         "description": "\n".join(description_lines)[:4096],
@@ -140,15 +142,13 @@ async def create_customerorder(order: dict) -> Optional[str]:
         payload["positions"] = positions
 
     async with httpx.AsyncClient(timeout=20.0) as client:
-        existing_id = await _find_customerorder_id_by_name(client, order_name)
-        if existing_id:
-            return existing_id
+        # Не ищем заказ по имени до POST — иначе можно вернуть чужой TG-* / старый документ.
         resp = await client.post(
             f"{MS_API_BASE}/entity/customerorder",
             headers=_headers(),
             json=payload,
         )
-        # Заказ с таким name уже существует: возвращаем существующий id вместо падения.
+        # Дубликат имени после повторной отправки: вернуть уже созданный наш MA-*.
         if resp.status_code == 412:
             existing_id = await _find_customerorder_id_by_name(client, order_name)
             if existing_id:
