@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+import logging
 from typing import Any, Optional
 from urllib.parse import quote
 import datetime as dt
@@ -12,6 +13,8 @@ import httpx
 
 from backend.config import MOYSKLAD_ENABLED, MOYSKLAD_ORG_ID, MOYSKLAD_TOKEN, MOYSKLAD_STORE_ID
 from backend.config import MOYSKLAD_GROUP_ID, MOYSKLAD_SALES_CHANNEL_ID, MOYSKLAD_DEFAULT_AGENT_ID
+
+log = logging.getLogger("plombir.moysklad")
 
 MS_API_BASE = "https://api.moysklad.ru/api/remap/1.2"
 MS_CURRENCY_HREF = f"{MS_API_BASE}/entity/currency/22a8698c-9708-11ec-0a80-099a001a3a8a"
@@ -43,6 +46,17 @@ MS_ATTRS = {
 
 def is_moysklad_ready() -> bool:
     return bool(MOYSKLAD_ENABLED and MOYSKLAD_TOKEN and MOYSKLAD_ORG_ID)
+
+
+def moysklad_not_ready_reason() -> str:
+    """Короткое объяснение для логов и moysklad_sync_error (без секретов)."""
+    if not MOYSKLAD_ENABLED:
+        return "MOYSKLAD_ENABLED=0"
+    if not (MOYSKLAD_TOKEN or "").strip():
+        return "MOYSKLAD_TOKEN пуст"
+    if not (MOYSKLAD_ORG_ID or "").strip():
+        return "MOYSKLAD_ORG_ID пуст"
+    return ""
 
 
 def _headers() -> dict[str, str]:
@@ -142,6 +156,12 @@ async def create_customerorder(order: dict) -> Optional[str]:
         payload["positions"] = positions
 
     async with httpx.AsyncClient(timeout=20.0) as client:
+        log.info(
+            "MoySklad POST customerorder name=%s local_order_id=%s sales_channel=%s",
+            order_name,
+            order.get("id"),
+            bool(MOYSKLAD_SALES_CHANNEL_ID),
+        )
         # Не ищем заказ по имени до POST — иначе можно вернуть чужой TG-* / старый документ.
         resp = await client.post(
             f"{MS_API_BASE}/entity/customerorder",
@@ -150,12 +170,30 @@ async def create_customerorder(order: dict) -> Optional[str]:
         )
         # Дубликат имени после повторной отправки: вернуть уже созданный наш MA-*.
         if resp.status_code == 412:
+            log.warning(
+                "MoySklad customerorder 412 duplicate name=%s — ищем существующий",
+                order_name,
+            )
             existing_id = await _find_customerorder_id_by_name(client, order_name)
             if existing_id:
+                log.info("MoySklad нашли существующий заказ name=%s ms_id=%s", order_name, existing_id)
                 return existing_id
+        if resp.status_code >= 400:
+            body = (resp.text or "")[:4000]
+            log.error(
+                "MoySklad customerorder HTTP %s name=%s body=%s",
+                resp.status_code,
+                order_name,
+                body,
+            )
         resp.raise_for_status()
         data = resp.json()
-        return data.get("id")
+        cid = data.get("id")
+        if not cid:
+            log.error("MoySklad customerorder 200 но нет id в ответе: %s", str(data)[:2000])
+        else:
+            log.info("MoySklad customerorder создан ms_id=%s name=%s", cid, order_name)
+        return cid
 
 
 async def _build_positions(order: dict) -> list[dict[str, Any]]:

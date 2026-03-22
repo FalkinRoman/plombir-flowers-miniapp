@@ -4,6 +4,7 @@ Telegram Bot для Plombir Flowers.
 Кнопка открытия Mini App + callback-обработка.
 """
 from pathlib import Path
+import logging
 import uuid
 
 from telegram import (
@@ -24,7 +25,9 @@ from telegram.ext import (
 from backend.config import BOT_TOKEN, WEBAPP_URL, ADMIN_CHAT_ID
 from backend.orders import list_recent_orders, get_order, get_orders_by_user, update_order_status
 from backend.orders import update_order_moysklad
-from backend.moysklad import create_customerorder, is_moysklad_ready
+from backend.moysklad import create_customerorder, is_moysklad_ready, moysklad_not_ready_reason
+
+log = logging.getLogger("plombir.bot")
 from backend.ui_content import (
     BANNERS_DIR,
     ensure_ui_storage,
@@ -360,8 +363,21 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     ms_id = await create_customerorder(order)
                     if ms_id:
                         update_order_moysklad(order_id, moysklad_order_id=ms_id, sync_error="")
+                    else:
+                        update_order_moysklad(
+                            order_id,
+                            sync_error="MoySklad: customerorder без id (см. логи)"[:500],
+                        )
                 except Exception as e:
+                    log.exception("bot admin order_id=%s MoySklad create_customerorder", order_id)
                     update_order_moysklad(order_id, sync_error=str(e)[:500])
+            elif order:
+                reason = moysklad_not_ready_reason() or "неизвестно"
+                log.warning("bot admin order_id=%s оплачен, MoySklad пропущен: %s", order_id, reason)
+                update_order_moysklad(
+                    order_id,
+                    sync_error=f"MoySklad не настроен: {reason}"[:500],
+                )
         elif next_status == "Отменен":
             from backend.orders import update_order_payment
             update_order_payment(

@@ -2,6 +2,7 @@
 FastAPI приложение — API для Telegram Mini App «Plombir Flowers».
 """
 import asyncio
+import logging
 from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
@@ -43,9 +44,10 @@ from backend.orders import (
     list_recent_orders,
 )
 from backend.payments import create_payment, is_yookassa_ready, PaymentConfigError
-from backend.moysklad import create_customerorder, is_moysklad_ready
+from backend.moysklad import create_customerorder, is_moysklad_ready, moysklad_not_ready_reason
 from backend.ui_content import ensure_ui_storage, get_ui_content
 
+log = logging.getLogger("plombir")
 
 # ── Кэш данных ──
 _cache: dict = {
@@ -92,6 +94,14 @@ async def scheduler():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
+    root = logging.getLogger()
+    if not root.handlers:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        )
+    logging.getLogger("plombir").setLevel(logging.INFO)
+    logging.getLogger("plombir.moysklad").setLevel(logging.INFO)
     init_db()
     ensure_ui_storage()
     await refresh_feed()
@@ -521,8 +531,16 @@ async def tilda_moysklad_webhook(request: Request):
     if is_moysklad_ready():
         try:
             ms_id = await create_customerorder(created)
+            if ms_id:
+                ms_error = ""
+            else:
+                ms_error = "MoySklad: customerorder без id (см. логи)"[:500]
         except Exception as e:
+            log.exception("tilda_moysklad_webhook order_id=%s MoySklad", created["id"])
             ms_error = str(e)[:500]
+    else:
+        ms_error = f"MoySklad не настроен: {moysklad_not_ready_reason()}"[:500]
+        log.warning("tilda_moysklad_webhook order_id=%s: %s", created["id"], ms_error)
     update_order_moysklad(created["id"], moysklad_order_id=ms_id, sync_error=ms_error)
 
     return {"ok": True, "order_id": created["id"], "moysklad_order_id": ms_id}
@@ -577,6 +595,7 @@ async def yookassa_webhook(request: Request):
     if YOOKASSA_WEBHOOK_SECRET:
         token = request.headers.get("X-Plombir-Webhook-Token", "")
         if token != YOOKASSA_WEBHOOK_SECRET:
+            log.warning("yookassa_webhook отклонён: неверный X-Plombir-Webhook-Token")
             raise HTTPException(status_code=403, detail="Неверный webhook token")
 
     body = await request.json()
@@ -586,11 +605,28 @@ async def yookassa_webhook(request: Request):
     status = payment_obj.get("status")
     metadata = payment_obj.get("metadata") or {}
     order_id_raw = metadata.get("order_id")
+    log.info(
+        "yookassa_webhook event=%s payment_id=%s status=%s metadata_order_id=%s",
+        event,
+        payment_id,
+        status,
+        order_id_raw,
+    )
     if not order_id_raw:
+        log.warning(
+            "yookassa_webhook: нет metadata.order_id — синхронизация с БД/MoySklad пропущена "
+            "(payment_id=%s)",
+            payment_id,
+        )
         return {"ok": True}
     try:
         order_id = int(order_id_raw)
     except ValueError:
+        log.warning(
+            "yookassa_webhook: metadata.order_id не число: %r (payment_id=%s)",
+            order_id_raw,
+            payment_id,
+        )
         return {"ok": True}
 
     if event in {"payment.succeeded", "payment.waiting_for_capture"}:
@@ -608,8 +644,27 @@ async def yookassa_webhook(request: Request):
                     ms_id = await create_customerorder(order)
                     if ms_id:
                         update_order_moysklad(order_id, moysklad_order_id=ms_id, sync_error="")
+                    else:
+                        msg = "MoySklad: customerorder без id в ответе (см. логи plombir.moysklad)"
+                        log.error("order_id=%s yookassa_webhook: %s", order_id, msg)
+                        update_order_moysklad(order_id, sync_error=msg[:500])
                 except Exception as e:
+                    log.exception(
+                        "order_id=%s yookassa_webhook: MoySklad create_customerorder",
+                        order_id,
+                    )
                     update_order_moysklad(order_id, sync_error=str(e)[:500])
+            else:
+                reason = moysklad_not_ready_reason() or "неизвестно"
+                log.warning(
+                    "order_id=%s оплачен, MoySklad пропущен: %s",
+                    order_id,
+                    reason,
+                )
+                update_order_moysklad(
+                    order_id,
+                    sync_error=f"MoySklad не настроен: {reason}"[:500],
+                )
             asyncio.create_task(_notify_customer_status(order))
     elif event in {"payment.canceled"}:
         update_order_payment(
@@ -622,6 +677,8 @@ async def yookassa_webhook(request: Request):
         order = get_order(order_id)
         if order:
             asyncio.create_task(_notify_customer_status(order))
+    else:
+        log.info("yookassa_webhook: событие не обрабатываем явно: %s", event)
     return {"ok": True}
 
 
