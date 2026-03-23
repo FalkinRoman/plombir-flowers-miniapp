@@ -193,7 +193,59 @@ async def create_customerorder(order: dict) -> Optional[str]:
             log.error("MoySklad customerorder 200 но нет id в ответе: %s", str(data)[:2000])
         else:
             log.info("MoySklad customerorder создан ms_id=%s name=%s", cid, order_name)
+            if MOYSKLAD_SALES_CHANNEL_ID and not _has_sales_channel(data):
+                patched = await _ensure_sales_channel(client, cid)
+                if patched:
+                    log.info(
+                        "MoySklad проставили salesChannel постфактум ms_id=%s channel_id=%s",
+                        cid,
+                        MOYSKLAD_SALES_CHANNEL_ID,
+                    )
+                else:
+                    log.warning(
+                        "MoySklad не удалось проставить salesChannel постфактум ms_id=%s channel_id=%s",
+                        cid,
+                        MOYSKLAD_SALES_CHANNEL_ID,
+                    )
         return cid
+
+
+def _has_sales_channel(data: dict[str, Any]) -> bool:
+    sales_channel = data.get("salesChannel")
+    if not isinstance(sales_channel, dict):
+        return False
+    meta = sales_channel.get("meta")
+    if not isinstance(meta, dict):
+        return False
+    href = str(meta.get("href") or "").strip()
+    return bool(href)
+
+
+async def _ensure_sales_channel(client: httpx.AsyncClient, customerorder_id: str) -> bool:
+    payload = {
+        "salesChannel": {
+            "meta": {
+                "href": f"{MS_API_BASE}/entity/saleschannel/{MOYSKLAD_SALES_CHANNEL_ID}",
+                "type": "saleschannel",
+                "mediaType": "application/json",
+            }
+        }
+    }
+    resp = await client.put(
+        f"{MS_API_BASE}/entity/customerorder/{customerorder_id}",
+        headers=_headers(),
+        json=payload,
+    )
+    if resp.status_code >= 400:
+        log.error(
+            "MoySklad PATCH salesChannel HTTP %s ms_id=%s body=%s",
+            resp.status_code,
+            customerorder_id,
+            (resp.text or "")[:2000],
+        )
+        return False
+    data = resp.json() or {}
+    return _has_sales_channel(data)
 
 
 async def _build_positions(order: dict) -> list[dict[str, Any]]:
