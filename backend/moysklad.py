@@ -177,6 +177,20 @@ async def create_customerorder(order: dict) -> Optional[str]:
             )
             existing_id = await _find_customerorder_id_by_name(client, order_name)
             if existing_id:
+                if MOYSKLAD_SALES_CHANNEL_ID:
+                    patched = await _ensure_sales_channel(client, existing_id)
+                    if patched:
+                        log.info(
+                            "MoySklad проставили salesChannel для существующего заказа ms_id=%s channel_id=%s",
+                            existing_id,
+                            MOYSKLAD_SALES_CHANNEL_ID,
+                        )
+                    else:
+                        log.warning(
+                            "MoySklad не удалось проставить salesChannel для существующего заказа ms_id=%s channel_id=%s",
+                            existing_id,
+                            MOYSKLAD_SALES_CHANNEL_ID,
+                        )
                 log.info("MoySklad нашли существующий заказ name=%s ms_id=%s", order_name, existing_id)
                 return existing_id
         if resp.status_code >= 400:
