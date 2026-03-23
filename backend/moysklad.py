@@ -538,6 +538,39 @@ async def _get_or_create_product_meta(
             code,
             name[:255],
         )
+        # Последний fallback: создаем технический товар с уникальным кодом,
+        # чтобы заказ не разваливался из-за коллизий/архивных кодов в МС.
+        alt_code = f"MINIAPP-AUTO-{int(dt.datetime.utcnow().timestamp())}"
+        alt_payload = {
+            "name": name[:255] or alt_code,
+            "code": alt_code,
+            "externalCode": alt_code,
+            "salePrices": [
+                {
+                    "value": int(round(max(price, 0) * 100)),
+                    "currency": {"meta": {"href": MS_CURRENCY_HREF, "type": "currency"}},
+                }
+            ],
+        }
+        alt_resp = await client.post(f"{MS_API_BASE}/entity/product", headers=_headers(), json=alt_payload)
+        if alt_resp.status_code >= 400:
+            log.error(
+                "MoySklad: fallback create product failed base_code=%s alt_code=%s HTTP=%s body=%s",
+                code,
+                alt_code,
+                alt_resp.status_code,
+                (alt_resp.text or "")[:2000],
+            )
+            return None
+        alt_data = alt_resp.json() or {}
+        alt_meta = alt_data.get("meta")
+        if isinstance(alt_meta, dict):
+            log.warning(
+                "MoySklad: использован fallback product code=%s вместо конфликтного code=%s",
+                alt_code,
+                code,
+            )
+            return alt_meta
         return None
     if resp.status_code >= 400:
         log.error(
