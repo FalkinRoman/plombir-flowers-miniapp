@@ -153,6 +153,12 @@ async def create_customerorder(order: dict) -> Optional[str]:
         }
 
     positions = await _build_positions(order)
+    total = float(order.get("total") or 0)
+    if total > 0 and not positions:
+        # Защита от "пустых" заказов в МС (0 позиций/0 сумма), которые ломают операционку.
+        raise RuntimeError(
+            "MoySklad: не удалось собрать позиции заказа (проверьте коды товаров и права API)"
+        )
     if positions:
         payload["positions"] = positions
 
@@ -305,15 +311,22 @@ async def _build_positions(order: dict) -> list[dict[str, Any]]:
     async with httpx.AsyncClient(timeout=20.0) as client:
         for item in items:
             code = str(item.get("product_code") or item.get("product_id") or "").strip()
-            if not code:
-                continue
-            assortment_meta = await _get_or_create_product_meta(
+            item_name = str(item.get("name") or code or "Товар")
+            item_product_id = str(item.get("product_id") or "").strip()
+            assortment_meta = await _resolve_assortment_meta(
                 client,
                 code=code,
-                name=str(item.get("name") or code),
+                product_id=item_product_id,
+                name=item_name,
                 price=float(item.get("price") or 0),
             )
             if not assortment_meta:
+                log.warning(
+                    "MoySklad: не нашли assortment для item name=%s code=%s product_id=%s",
+                    item_name,
+                    code,
+                    item_product_id,
+                )
                 continue
             qty = float(item.get("quantity") or 1)
             price = float(item.get("price") or 0)
@@ -340,6 +353,8 @@ async def _build_positions(order: dict) -> list[dict[str, Any]]:
                     "price": int(round(max(total, 0) * 100)),
                     "assortment": {"meta": fallback_meta},
                 })
+            else:
+                log.error("MoySklad: fallback assortment MINIAPP-FALLBACK не удалось получить")
     return positions
 
 
@@ -388,6 +403,65 @@ async def _find_product_meta_by_code(client: httpx.AsyncClient, code: str) -> Op
     return meta if isinstance(meta, dict) else None
 
 
+async def _find_product_meta_by_external_code(client: httpx.AsyncClient, external_code: str) -> Optional[dict[str, Any]]:
+    encoded = quote(external_code, safe="")
+    url = f"{MS_API_BASE}/entity/product?filter=externalCode={encoded}&limit=1"
+    resp = await client.get(url, headers=_headers())
+    if resp.status_code >= 400:
+        return None
+    rows = (resp.json() or {}).get("rows") or []
+    if not rows:
+        return None
+    meta = (rows[0] or {}).get("meta")
+    return meta if isinstance(meta, dict) else None
+
+
+async def _find_product_meta_by_name(client: httpx.AsyncClient, name: str) -> Optional[dict[str, Any]]:
+    encoded = quote(name, safe="")
+    url = f"{MS_API_BASE}/entity/product?filter=name={encoded}&limit=1"
+    resp = await client.get(url, headers=_headers())
+    if resp.status_code >= 400:
+        return None
+    rows = (resp.json() or {}).get("rows") or []
+    if not rows:
+        return None
+    meta = (rows[0] or {}).get("meta")
+    return meta if isinstance(meta, dict) else None
+
+
+async def _resolve_assortment_meta(
+    client: httpx.AsyncClient,
+    *,
+    code: str,
+    product_id: str,
+    name: str,
+    price: float,
+) -> Optional[dict[str, Any]]:
+    for candidate in [code, product_id]:
+        candidate = (candidate or "").strip()
+        if not candidate:
+            continue
+        meta = await _find_product_meta_by_code(client, candidate)
+        if meta:
+            return meta
+        meta = await _find_product_meta_by_external_code(client, candidate)
+        if meta:
+            return meta
+    if name:
+        meta = await _find_product_meta_by_name(client, name)
+        if meta:
+            return meta
+    create_code = (code or product_id or "").strip()
+    if not create_code:
+        create_code = f"MINIAPP-{int(dt.datetime.utcnow().timestamp())}"
+    return await _get_or_create_product_meta(
+        client,
+        code=create_code,
+        name=name or create_code,
+        price=price,
+    )
+
+
 async def _get_or_create_product_meta(
     client: httpx.AsyncClient,
     *,
@@ -396,6 +470,9 @@ async def _get_or_create_product_meta(
     price: float,
 ) -> Optional[dict[str, Any]]:
     meta = await _find_product_meta_by_code(client, code)
+    if meta:
+        return meta
+    meta = await _find_product_meta_by_external_code(client, code)
     if meta:
         return meta
     payload = {
@@ -411,6 +488,13 @@ async def _get_or_create_product_meta(
     }
     resp = await client.post(f"{MS_API_BASE}/entity/product", headers=_headers(), json=payload)
     if resp.status_code >= 400:
+        log.error(
+            "MoySklad: не удалось создать product code=%s name=%s HTTP=%s body=%s",
+            code,
+            name[:255],
+            resp.status_code,
+            (resp.text or "")[:2000],
+        )
         return None
     data = resp.json() or {}
     meta = data.get("meta")
@@ -458,6 +542,10 @@ def _build_attributes(order: dict) -> list[dict[str, Any]]:
         ("telegram_nickname", "telegram_nickname", "string"),
     ]:
         value = str(order.get(key) or "").strip()
+        if not value and key == "recipient_name":
+            value = str(order.get("customer_name") or "").strip()
+        if not value and key == "recipient_phone":
+            value = str(order.get("customer_phone") or "").strip()
         if value:
             attrs.append({
                 "meta": {"href": MS_ATTRS[attr_key], "type": "attributemetadata"},
