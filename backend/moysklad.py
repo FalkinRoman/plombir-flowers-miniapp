@@ -175,8 +175,9 @@ async def create_customerorder(order: dict) -> Optional[str]:
                 "MoySklad customerorder 412 duplicate name=%s — ищем существующий",
                 order_name,
             )
-            existing_id = await _find_customerorder_id_by_name(client, order_name)
-            if existing_id:
+            existing = await _find_customerorder_by_name(client, order_name)
+            existing_id = (existing or {}).get("id")
+            if existing_id and _is_our_miniapp_order(existing, order):
                 if MOYSKLAD_SALES_CHANNEL_ID:
                     patched = await _ensure_sales_channel(client, existing_id)
                     if patched:
@@ -193,6 +194,34 @@ async def create_customerorder(order: dict) -> Optional[str]:
                         )
                 log.info("MoySklad нашли существующий заказ name=%s ms_id=%s", order_name, existing_id)
                 return existing_id
+            # Конфликт имен со старым/чужим документом: создаем новый заказ с уникальным суффиксом.
+            if existing_id:
+                log.warning(
+                    "MoySklad найден заказ с таким именем, но это не наш local_order_id=%s ms_id=%s; создаем с уникальным именем",
+                    order.get("id"),
+                    existing_id,
+                )
+            else:
+                log.warning(
+                    "MoySklad не нашли existing по имени после 412 local_order_id=%s; создаем с уникальным именем",
+                    order.get("id"),
+                )
+            unique_name = f"{order_name}-{int(dt.datetime.utcnow().timestamp())}"
+            payload["name"] = unique_name
+            resp = await client.post(
+                f"{MS_API_BASE}/entity/customerorder",
+                headers=_headers(),
+                json=payload,
+            )
+            if resp.status_code >= 400:
+                body = (resp.text or "")[:4000]
+                log.error(
+                    "MoySklad customerorder retry HTTP %s name=%s body=%s",
+                    resp.status_code,
+                    unique_name,
+                    body,
+                )
+            resp.raise_for_status()
         if resp.status_code >= 400:
             body = (resp.text or "")[:4000]
             log.error(
@@ -314,7 +343,7 @@ async def _build_positions(order: dict) -> list[dict[str, Any]]:
     return positions
 
 
-async def _find_customerorder_id_by_name(client: httpx.AsyncClient, name: str) -> Optional[str]:
+async def _find_customerorder_by_name(client: httpx.AsyncClient, name: str) -> Optional[dict[str, Any]]:
     encoded = quote(name, safe="")
     url = f"{MS_API_BASE}/entity/customerorder?filter=name={encoded}&limit=1"
     resp = await client.get(url, headers=_headers())
@@ -323,7 +352,25 @@ async def _find_customerorder_id_by_name(client: httpx.AsyncClient, name: str) -
     rows = (resp.json() or {}).get("rows") or []
     if not rows:
         return None
-    return (rows[0] or {}).get("id")
+    row = rows[0] or {}
+    return row if isinstance(row, dict) else None
+
+
+def _is_our_miniapp_order(existing: dict[str, Any], order: dict[str, Any]) -> bool:
+    """Проверяем, что найденный дубль действительно относится к текущему локальному заказу."""
+    expected_prefix = f"Mini App заказ #{order.get('id')}"
+    description = str(existing.get("description") or "")
+    if expected_prefix and expected_prefix in description:
+        return True
+    # Fallback по сумме: в МС сумма в копейках.
+    try:
+        ms_sum = float(existing.get("sum") or 0) / 100
+        local_sum = float(order.get("total") or 0)
+        if ms_sum > 0 and abs(ms_sum - local_sum) < 0.01:
+            return True
+    except (TypeError, ValueError):
+        pass
+    return False
 
 
 async def _find_product_meta_by_code(client: httpx.AsyncClient, code: str) -> Optional[dict[str, Any]]:
