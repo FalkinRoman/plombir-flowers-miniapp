@@ -62,7 +62,8 @@ def moysklad_not_ready_reason() -> str:
 def _headers() -> dict[str, str]:
     return {
         "Authorization": f"Bearer {MOYSKLAD_TOKEN}",
-        "Content-Type": "application/json",
+        "Content-Type": "application/json;charset=utf-8",
+        "Accept": "application/json;charset=utf-8",
         "Accept-Encoding": "gzip",
     }
 
