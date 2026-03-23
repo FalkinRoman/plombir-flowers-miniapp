@@ -429,6 +429,32 @@ async def _find_product_meta_by_name(client: httpx.AsyncClient, name: str) -> Op
     return meta if isinstance(meta, dict) else None
 
 
+async def _find_assortment_meta_by_code(client: httpx.AsyncClient, code: str) -> Optional[dict[str, Any]]:
+    encoded = quote(code, safe="")
+    url = f"{MS_API_BASE}/entity/assortment?filter=code={encoded}&limit=1"
+    resp = await client.get(url, headers=_headers())
+    if resp.status_code >= 400:
+        return None
+    rows = (resp.json() or {}).get("rows") or []
+    if not rows:
+        return None
+    meta = (rows[0] or {}).get("meta")
+    return meta if isinstance(meta, dict) else None
+
+
+async def _find_assortment_meta_by_external_code(client: httpx.AsyncClient, external_code: str) -> Optional[dict[str, Any]]:
+    encoded = quote(external_code, safe="")
+    url = f"{MS_API_BASE}/entity/assortment?filter=externalCode={encoded}&limit=1"
+    resp = await client.get(url, headers=_headers())
+    if resp.status_code >= 400:
+        return None
+    rows = (resp.json() or {}).get("rows") or []
+    if not rows:
+        return None
+    meta = (rows[0] or {}).get("meta")
+    return meta if isinstance(meta, dict) else None
+
+
 async def _resolve_assortment_meta(
     client: httpx.AsyncClient,
     *,
@@ -441,6 +467,12 @@ async def _resolve_assortment_meta(
         candidate = (candidate or "").strip()
         if not candidate:
             continue
+        meta = await _find_assortment_meta_by_code(client, candidate)
+        if meta:
+            return meta
+        meta = await _find_assortment_meta_by_external_code(client, candidate)
+        if meta:
+            return meta
         meta = await _find_product_meta_by_code(client, candidate)
         if meta:
             return meta
@@ -489,6 +521,12 @@ async def _get_or_create_product_meta(
     resp = await client.post(f"{MS_API_BASE}/entity/product", headers=_headers(), json=payload)
     if resp.status_code == 412:
         # Конфликт уникальности (обычно code/externalCode уже есть) — добираем существующий товар.
+        meta = await _find_assortment_meta_by_code(client, code)
+        if meta:
+            return meta
+        meta = await _find_assortment_meta_by_external_code(client, code)
+        if meta:
+            return meta
         meta = await _find_product_meta_by_code(client, code)
         if meta:
             return meta
