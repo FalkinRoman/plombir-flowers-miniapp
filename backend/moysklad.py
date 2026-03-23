@@ -15,6 +15,7 @@ from backend.config import MOYSKLAD_ENABLED, MOYSKLAD_ORG_ID, MOYSKLAD_TOKEN, MO
 from backend.config import MOYSKLAD_GROUP_ID, MOYSKLAD_SALES_CHANNEL_ID, MOYSKLAD_DEFAULT_AGENT_ID
 
 log = logging.getLogger("plombir.moysklad")
+_PRICE_TYPE_META_CACHE: Optional[dict[str, Any]] = None
 
 MS_API_BASE = "https://api.moysklad.ru/api/remap/1.2"
 MS_CURRENCY_HREF = f"{MS_API_BASE}/entity/currency/22a8698c-9708-11ec-0a80-099a001a3a8a"
@@ -494,6 +495,44 @@ async def _resolve_assortment_meta(
     )
 
 
+async def _build_sale_price_payload(client: httpx.AsyncClient, price: float) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "value": int(round(max(price, 0) * 100)),
+        "currency": {"meta": {"href": MS_CURRENCY_HREF, "type": "currency"}},
+    }
+    price_type_meta = await _get_default_price_type_meta(client)
+    if price_type_meta:
+        payload["priceType"] = {"meta": price_type_meta}
+    return payload
+
+
+async def _get_default_price_type_meta(client: httpx.AsyncClient) -> Optional[dict[str, Any]]:
+    global _PRICE_TYPE_META_CACHE
+    if _PRICE_TYPE_META_CACHE:
+        return _PRICE_TYPE_META_CACHE
+    url = f"{MS_API_BASE}/context/companysettings/pricetype"
+    resp = await client.get(url, headers=_headers())
+    if resp.status_code >= 400:
+        log.warning("MoySklad: не удалось получить priceType HTTP=%s", resp.status_code)
+        return None
+    data = resp.json() or {}
+    rows = data.get("rows") if isinstance(data, dict) else None
+    if not isinstance(rows, list):
+        rows = data if isinstance(data, list) else []
+    if not rows:
+        return None
+    first = rows[0] or {}
+    meta = first.get("meta") if isinstance(first, dict) else None
+    if not isinstance(meta, dict):
+        return None
+    _PRICE_TYPE_META_CACHE = {
+        "href": meta.get("href"),
+        "type": meta.get("type") or "pricetype",
+        "mediaType": meta.get("mediaType") or "application/json",
+    }
+    return _PRICE_TYPE_META_CACHE
+
+
 async def _get_or_create_product_meta(
     client: httpx.AsyncClient,
     *,
@@ -511,12 +550,7 @@ async def _get_or_create_product_meta(
         "name": name[:255],
         "code": code,
         "externalCode": code,
-        "salePrices": [
-            {
-                "value": int(round(max(price, 0) * 100)),
-                "currency": {"meta": {"href": MS_CURRENCY_HREF, "type": "currency"}},
-            }
-        ],
+        "salePrices": [await _build_sale_price_payload(client, price)],
     }
     resp = await client.post(f"{MS_API_BASE}/entity/product", headers=_headers(), json=payload)
     if resp.status_code == 412:
@@ -545,12 +579,7 @@ async def _get_or_create_product_meta(
             "name": name[:255] or alt_code,
             "code": alt_code,
             "externalCode": alt_code,
-            "salePrices": [
-                {
-                    "value": int(round(max(price, 0) * 100)),
-                    "currency": {"meta": {"href": MS_CURRENCY_HREF, "type": "currency"}},
-                }
-            ],
+            "salePrices": [await _build_sale_price_payload(client, price)],
         }
         alt_resp = await client.post(f"{MS_API_BASE}/entity/product", headers=_headers(), json=alt_payload)
         if alt_resp.status_code >= 400:
