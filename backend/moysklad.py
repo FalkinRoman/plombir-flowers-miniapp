@@ -487,6 +487,20 @@ async def _get_or_create_product_meta(
         ],
     }
     resp = await client.post(f"{MS_API_BASE}/entity/product", headers=_headers(), json=payload)
+    if resp.status_code == 412:
+        # Конфликт уникальности (обычно code/externalCode уже есть) — добираем существующий товар.
+        meta = await _find_product_meta_by_code(client, code)
+        if meta:
+            return meta
+        meta = await _find_product_meta_by_external_code(client, code)
+        if meta:
+            return meta
+        log.warning(
+            "MoySklad: product create 412, но повторный поиск не нашел товар code=%s name=%s",
+            code,
+            name[:255],
+        )
+        return None
     if resp.status_code >= 400:
         log.error(
             "MoySklad: не удалось создать product code=%s name=%s HTTP=%s body=%s",
