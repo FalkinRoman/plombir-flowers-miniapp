@@ -181,12 +181,21 @@ function updateCartBadge() {
 
 // ── Telegram WebApp ──
 const tg = window.Telegram?.WebApp;
+
+/** WebApp 6.x: часть API есть в объекте, но вызов бросает — оборачиваем всё. */
+function tgSafe(fn) {
+    try {
+        if (tg && typeof fn === 'function') fn();
+    } catch (_) { /* старый клиент Telegram / 6.0 без BackButton/Haptic */ }
+}
+
 if (tg) {
     tg.ready();
     tg.expand();
-    // Ставим цвета хедера под стиль Mini App
-    tg.setHeaderColor('#ffffff');
-    tg.setBackgroundColor('#ffffff');
+    tgSafe(() => {
+        tg.setHeaderColor('#ffffff');
+        tg.setBackgroundColor('#ffffff');
+    });
 }
 
 // ── Header scroll shadow ──
@@ -216,14 +225,10 @@ function showScreen(name) {
     target.classList.add('screen-enter');
     state.currentScreen = name;
 
-    // Telegram back button
-    if (tg) {
-        if (name === 'catalog') {
-            tg.BackButton.hide();
-        } else {
-            tg.BackButton.show();
-        }
-    }
+    tgSafe(() => {
+        if (name === 'catalog') tg.BackButton.hide();
+        else tg.BackButton.show();
+    });
 
     // Scroll to top
     if (name !== 'catalog') {
@@ -244,10 +249,9 @@ function goBack() {
     else showScreen('catalog');
 }
 
-// Telegram BackButton
-if (tg) {
+tgSafe(() => {
     tg.BackButton.onClick(goBack);
-}
+});
 
 // ── DOM ──
 const $categories = document.getElementById('categories');
@@ -1337,10 +1341,7 @@ function addCurrentToCart() {
         }, 1200);
     }
 
-    // Haptic feedback in Telegram
-    if (tg && tg.HapticFeedback) {
-        tg.HapticFeedback.impactOccurred('light');
-    }
+    tgSafe(() => tg.HapticFeedback.impactOccurred('light'));
 
     showToast('Добавлено в корзину');
 }
@@ -1369,9 +1370,7 @@ function addToCartFromCard(product, btnEl) {
         }, 1200);
     }
 
-    if (tg && tg.HapticFeedback) {
-        tg.HapticFeedback.impactOccurred('light');
-    }
+    tgSafe(() => tg.HapticFeedback.impactOccurred('light'));
 
     showToast('Добавлено в корзину');
 }
@@ -1459,13 +1458,13 @@ function renderCartScreen() {
 }
 
 function changeQty(index, delta) {
-    if (tg && tg.HapticFeedback) tg.HapticFeedback.selectionChanged();
+    tgSafe(() => tg.HapticFeedback.selectionChanged());
     updateCartQuantity(index, delta);
     renderCartScreen();
 }
 
 function removeItem(index) {
-    if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
+    tgSafe(() => tg.HapticFeedback.impactOccurred('medium'));
     removeFromCart(index);
     renderCartScreen();
 }
@@ -1728,6 +1727,7 @@ async function submitOrder(e) {
     }
     if (form && typeof form.checkValidity === 'function' && !form.checkValidity()) {
         form.reportValidity();
+        showToast('Проверьте обязательные поля (имя, телефон и т.д.)');
         return;
     }
 

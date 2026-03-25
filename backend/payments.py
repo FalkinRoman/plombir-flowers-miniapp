@@ -116,5 +116,13 @@ async def create_payment(
             auth=(YOOKASSA_SHOP_ID, YOOKASSA_SECRET_KEY),
             headers=_headers(),
         )
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            detail = (resp.text or "")[:800]
+            try:
+                err = resp.json()
+                if isinstance(err, dict):
+                    detail = (err.get("description") or err.get("type") or detail)[:800]
+            except Exception:
+                pass
+            raise RuntimeError(f"ЮKassa HTTP {resp.status_code}: {detail}")
         return resp.json()
