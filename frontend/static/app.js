@@ -59,6 +59,8 @@ let state = {
     categoryId: '',
     priceMin: null,
     priceMax: null,
+    /** default | price_asc | price_desc | name_asc | name_desc | newest | oldest */
+    sortMode: 'price_asc',
     search: '',
     loading: false,
     currentScreen: 'catalog',  // catalog | product | cart | order | success | info
@@ -199,6 +201,11 @@ window.addEventListener('scroll', () => {
 // ── Navigation ──
 function showScreen(name) {
     closeMenu();
+    if (name !== 'catalog') {
+        try {
+            closeSortPanel();
+        } catch (_) { /* sort UI ещё не инициализирован */ }
+    }
     document.querySelectorAll('.screen').forEach(s => {
         s.style.display = 'none';
         s.classList.remove('screen-enter');
@@ -248,6 +255,21 @@ const $loading = document.getElementById('loading');
 const $loadMore = document.getElementById('load-more');
 const $btnLoadMore = document.getElementById('btn-load-more');
 const $search = document.getElementById('search');
+const $sortTrigger = document.getElementById('sort-trigger');
+const $sortPopover = document.getElementById('sort-popover');
+const $sortBackdrop = document.getElementById('sort-backdrop');
+const $sortPanel = document.getElementById('sort-panel');
+
+const SORT_MODES = ['default', 'price_asc', 'price_desc', 'name_asc', 'name_desc', 'newest', 'oldest'];
+const SORT_LABELS = {
+    default: 'Порядок: по умолчанию',
+    price_asc: 'Цена: по возрастанию',
+    price_desc: 'Цена: по убыванию',
+    name_asc: 'Название: А—Я',
+    name_desc: 'Название: Я—А',
+    newest: 'Порядок: сперва новые',
+    oldest: 'Порядок: сперва старые',
+};
 const $screenProduct = document.getElementById('screen-product');
 const $screenCart = document.getElementById('screen-cart');
 const $screenOrder = document.getElementById('screen-order');
@@ -266,9 +288,12 @@ async function init() {
     renderHeroSlider();
     startHeroAutoplay();
     await loadCategories();
+    state.sortMode = readStoredSort();
+    syncSortUi();
     await loadProducts(true);
     updateCartBadge();
     setupPriceFilter();
+    setupSortDropdown();
     await handlePaymentReturnFromUrl();
 }
 
@@ -685,6 +710,124 @@ function setupPriceFilter() {
     });
 }
 
+function readStoredSort() {
+    try {
+        const v = sessionStorage.getItem('plombir_catalog_sort');
+        if (v && SORT_MODES.includes(v)) return v;
+    } catch (_) { /* ignore */ }
+    return 'price_asc';
+}
+
+function persistSort(mode) {
+    try {
+        sessionStorage.setItem('plombir_catalog_sort', mode);
+    } catch (_) { /* ignore */ }
+}
+
+function positionSortPopover() {
+    const toolbar = document.querySelector('.catalog-toolbar');
+    const box = $sortPanel;
+    if (!toolbar || !box) return;
+    const r = toolbar.getBoundingClientRect();
+    const gap = 8;
+    let top = r.bottom + gap;
+    const h = Math.min(box.offsetHeight || 320, window.innerHeight * 0.52);
+    if (top + h > window.innerHeight - 12) {
+        top = Math.max(12, window.innerHeight - 12 - h);
+    }
+    box.style.top = `${Math.round(top)}px`;
+}
+
+function syncSortUi() {
+    if ($sortTrigger) {
+        const isOpen = $sortPopover && $sortPopover.classList.contains('sort-popover--open');
+        $sortTrigger.classList.toggle('sort-dropdown__trigger--open', !!isOpen);
+        const dirty = state.sortMode && state.sortMode !== 'price_asc';
+        $sortTrigger.classList.toggle('sort-dropdown__trigger--dirty', !!dirty);
+    }
+    document.querySelectorAll('.sort-dropdown__option').forEach((btn) => {
+        const on = btn.dataset.sort === state.sortMode;
+        btn.classList.toggle('sort-dropdown__option--active', on);
+        btn.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+}
+
+function closeSortPanel() {
+    if (!$sortPopover || !$sortTrigger) return;
+    $sortPopover.classList.remove('sort-popover--open');
+    $sortPopover.setAttribute('aria-hidden', 'true');
+    $sortTrigger.setAttribute('aria-expanded', 'false');
+    $sortTrigger.classList.remove('sort-dropdown__trigger--open');
+    document.body.style.overflow = '';
+    syncSortUi();
+}
+
+function openSortPanel() {
+    if (!$sortPopover || !$sortTrigger) return;
+    $sortPopover.classList.add('sort-popover--open');
+    $sortPopover.setAttribute('aria-hidden', 'false');
+    $sortTrigger.setAttribute('aria-expanded', 'true');
+    $sortTrigger.classList.add('sort-dropdown__trigger--open');
+    document.body.style.overflow = 'hidden';
+    syncSortUi();
+    requestAnimationFrame(() => {
+        positionSortPopover();
+        requestAnimationFrame(() => positionSortPopover());
+    });
+}
+
+function setupSortDropdown() {
+    if (!$sortTrigger || !$sortPanel || !$sortPopover) return;
+
+    $sortTrigger.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if ($sortPopover.classList.contains('sort-popover--open')) closeSortPanel();
+        else openSortPanel();
+    });
+
+    if ($sortBackdrop) {
+        $sortBackdrop.addEventListener('click', () => closeSortPanel());
+    }
+
+    $sortPanel.querySelectorAll('.sort-dropdown__option').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const mode = btn.dataset.sort;
+            if (!mode || !SORT_MODES.includes(mode)) return;
+            state.sortMode = mode;
+            persistSort(mode);
+            syncSortUi();
+            closeSortPanel();
+            state.offset = 0;
+            loadProducts(true);
+        });
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && $sortPopover && $sortPopover.classList.contains('sort-popover--open')) {
+            closeSortPanel();
+        }
+    });
+
+    const onResize = () => {
+        if ($sortPopover && $sortPopover.classList.contains('sort-popover--open')) {
+            positionSortPopover();
+        }
+    };
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', onResize);
+    }
+    let sortScrollTimer;
+    window.addEventListener('scroll', () => {
+        if (!$sortPopover || !$sortPopover.classList.contains('sort-popover--open')) return;
+        clearTimeout(sortScrollTimer);
+        sortScrollTimer = setTimeout(positionSortPopover, 40);
+    }, { passive: true, capture: true });
+}
+
 // ── Skeleton cards ──
 function showSkeletons(count = 4) {
     for (let i = 0; i < count; i++) {
@@ -746,6 +889,8 @@ async function loadProducts(reset = false) {
         if (state.priceMin !== null) params.set('price_min', state.priceMin);
         if (state.priceMax !== null) params.set('price_max', state.priceMax);
         if (state.search) params.set('search', state.search);
+        // Всегда передаём sort — иначе при пустом значении API падёт на default price_asc.
+        params.set('sort', state.sortMode || 'price_asc');
 
         // Запрос + минимальная задержка, чтобы скелетоны были видны
         const [res] = await Promise.all([

@@ -248,17 +248,69 @@ async def get_categories():
     return visible
 
 
+def _apply_catalog_sort(items: list, sort: str, *, search_active: bool) -> None:
+    """
+    Сортировка как в каталоге Tilda: цена, название, порядок фида.
+    При активном поиске и sort=default сохраняем порядок по релевантности.
+    Вторичный ключ id — стабильный порядок при одинаковой цене и не мутируем кэш.
+    """
+    s = (sort or "price_asc").strip().lower()
+    allowed = {
+        "default", "price_asc", "price_desc",
+        "name_asc", "name_desc", "newest", "oldest",
+    }
+    if s not in allowed:
+        s = "price_asc"
+    if search_active and s == "default":
+        return
+    if s == "default":
+        return
+
+    def _price_key(p):
+        pr = p.get("price")
+        if pr is None:
+            price = float("inf")
+        else:
+            try:
+                price = float(pr)
+            except (TypeError, ValueError):
+                price = float("inf")
+        sid = str(p.get("id") or "")
+        return (price, sid)
+
+    def _name_key(p):
+        return ((p.get("name") or "").lower(), str(p.get("id") or ""))
+
+    def _order_key(p):
+        return int(p.get("catalog_order", 0))
+
+    if s == "price_asc":
+        items.sort(key=_price_key)
+    elif s == "price_desc":
+        items.sort(key=_price_key, reverse=True)
+    elif s == "name_asc":
+        items.sort(key=_name_key)
+    elif s == "name_desc":
+        items.sort(key=_name_key, reverse=True)
+    elif s == "newest":
+        items.sort(key=_order_key, reverse=True)
+    elif s == "oldest":
+        items.sort(key=_order_key)
+
+
 @app.get("/api/products")
 async def get_products(
     category_id: Optional[str] = None,
     price_min: Optional[float] = None,
     price_max: Optional[float] = None,
     search: Optional[str] = None,
+    sort: str = "price_asc",
     limit: int = 20,
     offset: int = 0,
 ):
-    """Список товаров с фильтрацией."""
-    items = _cache["products"]
+    """Список товаров с фильтрацией и сортировкой (как на сайте Tilda)."""
+    # Всегда копия: иначе sort() мутирует _cache["products"] и порядок ломается между запросами.
+    items = list(_cache["products"])
 
     if category_id:
         items = [p for p in items if category_id in p.get("category_ids", [p["category_id"]])]
@@ -319,6 +371,8 @@ async def get_products(
 
         scored = [(p, _relevance(p)) for p in items]
         items = [p for p, r in sorted(scored, key=lambda x: -x[1]) if r > 0]
+
+    _apply_catalog_sort(items, sort, search_active=bool(search and search.strip()))
 
     total = len(items)
 

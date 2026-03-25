@@ -210,7 +210,11 @@ async def fetch_and_parse() -> dict:
             if product["category_id"] in HIDDEN_CATEGORIES:
                 product["category_id"] = visible_cats[0]
             filtered_products.append(product)
-    
+
+    # Порядок в YML (для сортировок «сначала новые / старые» в каталоге)
+    for i, product in enumerate(filtered_products):
+        product["catalog_order"] = i
+
     print(f"📊 После фильтрации: {len(filtered_products)} из {len(products)} товаров "
           f"(убрано {len(products) - len(filtered_products)} без видимых категорий)")
 

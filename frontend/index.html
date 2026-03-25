@@ -13,7 +13,7 @@
     <link rel="preconnect" href="https://pay.yandex.ru" crossorigin>
     <script src="https://pay.yandex.ru/sdk/v1/pay.js" defer></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css">
-    <link rel="stylesheet" href="/app/static/styles.css?v=37">
+    <link rel="stylesheet" href="/app/static/styles.css?v=41">
 </head>
 <body>
     <div id="app">
@@ -71,9 +71,53 @@
                 <button class="price-btn" data-min="25000" data-max="">от 25 000₽</button>
             </div>
 
-            <!-- Search -->
-            <div class="search-bar">
-                <input type="text" id="search" placeholder="Поиск..." />
+            <!-- Поиск + сортировка (как на plombirflowers.ru/catalog) -->
+            <div class="catalog-toolbar">
+                <div class="search-bar catalog-toolbar__search">
+                    <input type="text" id="search" placeholder="Поиск..." autocomplete="off" />
+                </div>
+                <div class="sort-dropdown" id="sort-dropdown">
+                    <button type="button" class="sort-dropdown__trigger" id="sort-trigger"
+                            aria-expanded="false" aria-haspopup="listbox" aria-label="Сортировка и фильтр">
+                        <i class="ri-filter-3-line sort-dropdown__icon" aria-hidden="true"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Всплывашка под строкой поиска: прямоугольник + подложка (без шторки снизу) -->
+            <div class="sort-popover" id="sort-popover" aria-hidden="true">
+                <div class="sort-popover__backdrop" id="sort-backdrop" tabindex="-1" aria-hidden="true"></div>
+                <div class="sort-popover__box" id="sort-panel" role="listbox" aria-label="Сортировка каталога">
+                    <div class="sort-popover__title">Сортировка</div>
+                    <button type="button" class="sort-dropdown__option" data-sort="default" role="option">
+                        <span class="sort-dropdown__check" aria-hidden="true"><i class="ri-check-line"></i></span>
+                        <span>Порядок: по умолчанию</span>
+                    </button>
+                    <button type="button" class="sort-dropdown__option" data-sort="price_asc" role="option">
+                        <span class="sort-dropdown__check" aria-hidden="true"><i class="ri-check-line"></i></span>
+                        <span>Цена: по возрастанию</span>
+                    </button>
+                    <button type="button" class="sort-dropdown__option" data-sort="price_desc" role="option">
+                        <span class="sort-dropdown__check" aria-hidden="true"><i class="ri-check-line"></i></span>
+                        <span>Цена: по убыванию</span>
+                    </button>
+                    <button type="button" class="sort-dropdown__option" data-sort="name_asc" role="option">
+                        <span class="sort-dropdown__check" aria-hidden="true"><i class="ri-check-line"></i></span>
+                        <span>Название: А—Я</span>
+                    </button>
+                    <button type="button" class="sort-dropdown__option" data-sort="name_desc" role="option">
+                        <span class="sort-dropdown__check" aria-hidden="true"><i class="ri-check-line"></i></span>
+                        <span>Название: Я—А</span>
+                    </button>
+                    <button type="button" class="sort-dropdown__option" data-sort="newest" role="option">
+                        <span class="sort-dropdown__check" aria-hidden="true"><i class="ri-check-line"></i></span>
+                        <span>Порядок: сперва новые</span>
+                    </button>
+                    <button type="button" class="sort-dropdown__option" data-sort="oldest" role="option">
+                        <span class="sort-dropdown__check" aria-hidden="true"><i class="ri-check-line"></i></span>
+                        <span>Порядок: сперва старые</span>
+                    </button>
+                </div>
             </div>
 
             <!-- Products grid -->
@@ -141,6 +185,6 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
-    <script src="/app/static/app.js?v=37"></script>
+    <script src="/app/static/app.js?v=41"></script>
 </body>
 </html>

@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Optional
 from urllib.parse import quote
 import datetime as dt
@@ -67,6 +68,48 @@ def _headers() -> dict[str, str]:
         "Accept": "application/json;charset=utf-8",
         "Accept-Encoding": "gzip",
     }
+
+
+def _expand_assortment_lookup_candidates(*parts: str) -> list[str]:
+    """
+    Строки для поиска товара в МС по code / externalCode / article.
+    Фид Tilda YML: id оффера часто «113644689262v1», а в карточке МС внешний код — без суффикса vN.
+    """
+    seen: list[str] = []
+    for raw in parts:
+        s = (raw or "").strip()
+        if not s:
+            continue
+        if s not in seen:
+            seen.append(s)
+        if "v" in s:
+            i = s.rindex("v")
+            if i > 0 and s[i + 1 :].isdigit():
+                base = s[:i]
+                if base and base not in seen:
+                    seen.append(base)
+        # Иногда в МС кладут только цифры без префикса, а в YML — длинный id
+        digits = re.sub(r"\D", "", s)
+        if len(digits) >= 6 and digits not in seen:
+            seen.append(digits)
+    return seen
+
+
+def _strip_leading_offer_id_from_name(name: str) -> Optional[str]:
+    """
+    Если в названии случайно попал id оффера («113644689262v1 Букет №…»), пробуем искать по чистому имени.
+    """
+    n = (name or "").strip()
+    if not n or " " not in n:
+        return None
+    first, rest = n.split(None, 1)
+    rest = rest.strip()
+    if not rest:
+        return None
+    # Первый токен похож на id оффера Tilda (цифры + опционально vN)
+    if re.match(r"^\d+[a-zA-Z]?\d*$", first) and len(first) >= 6:
+        return rest
+    return None
 
 
 async def create_customerorder(order: dict) -> Optional[str]:
@@ -464,10 +507,7 @@ async def _resolve_assortment_meta(
     name: str,
     price: float,
 ) -> Optional[dict[str, Any]]:
-    for candidate in [code, product_id]:
-        candidate = (candidate or "").strip()
-        if not candidate:
-            continue
+    for candidate in _expand_assortment_lookup_candidates(code, product_id):
         meta = await _find_assortment_meta_by_code(client, candidate)
         if meta:
             return meta
