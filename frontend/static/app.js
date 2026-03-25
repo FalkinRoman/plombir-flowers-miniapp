@@ -424,7 +424,11 @@ function menuOpenInfo(page) {
 function openExternalUrl(url) {
     if (!url) return;
     if (tg && typeof tg.openLink === 'function') {
-        tg.openLink(url);
+        try {
+            tg.openLink(url, { try_instant_view: false });
+        } catch (_) {
+            tg.openLink(url);
+        }
         return;
     }
     window.open(url, '_blank', 'noopener,noreferrer');
@@ -1718,7 +1722,14 @@ async function submitOrder(e) {
     const formData = new FormData(form);
     const cart = getCart();
 
-    if (cart.length === 0) return;
+    if (cart.length === 0) {
+        showToast('Корзина пуста — добавьте товары в корзину');
+        return;
+    }
+    if (form && typeof form.checkValidity === 'function' && !form.checkValidity()) {
+        form.reportValidity();
+        return;
+    }
 
     btn.disabled = true;
     btn.textContent = 'Отправляем...';
@@ -1775,16 +1786,27 @@ async function submitOrder(e) {
 
         const result = await res.json();
 
-        if (result.payment?.enabled && result.payment?.confirmation_url) {
-            // Заказ уже создан; перед редиректом в ЮKassa показываем промежуточный экран.
+        const pm = (orderData.payment_method || 'manual').toLowerCase();
+        const wantsOnline = pm === 'card' || pm === 'split';
+        const pay = result.payment;
+        const okPay = !!(pay && pay.enabled && pay.confirmation_url);
+
+        if (wantsOnline && okPay) {
             saveCart([]);
-            showPaymentAwaitingRedirect(result.order_id, orderData.payment_method, result.payment.confirmation_url);
+            showPaymentAwaitingRedirect(result.order_id, orderData.payment_method, pay.confirmation_url);
             return;
-        } else if (orderData.payment_method !== 'manual' && result.payment?.enabled === false) {
-            showToast('Онлайн-оплата пока недоступна, заказ принят менеджером');
         }
 
-        // Для офлайн/фолбэк-сценария заказ оформлен сразу.
+        if (wantsOnline && !okPay) {
+            const msg =
+                (pay && pay.message) ||
+                'Онлайн-оплата не создана (проверьте ЮKassa и способ Сплит в кабинете). Заказ сохранён — свяжитесь с магазином или попробуйте «картой».';
+            showToast(msg);
+            btn.disabled = false;
+            btn.textContent = `Отправить заказ — ${formatPrice(getCartTotal())}`;
+            return;
+        }
+
         saveCart([]);
         showOrderSuccess(result.order_id);
     } catch (e) {

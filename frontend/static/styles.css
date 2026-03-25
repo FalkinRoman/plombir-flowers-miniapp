@@ -2119,6 +2119,10 @@ select.form-input {
 
 .order__ultimate-widget {
     margin: 2px 0 14px;
+    max-height: 140px;
+    overflow: hidden;
+    /* Виджет YaPay иногда перехватывает тапы в Telegram WebView; оплата всё равно через ЮKassa. */
+    pointer-events: none;
 }
 
 /* ══════════════════════════════════════════════
