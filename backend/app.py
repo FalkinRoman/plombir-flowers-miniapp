@@ -2,6 +2,7 @@
 FastAPI приложение — API для Telegram Mini App «Plombir Flowers».
 """
 import asyncio
+import html
 import logging
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -21,6 +22,7 @@ from backend.config import (
     YOOKASSA_WEBHOOK_SECRET,
     SPLIT_ENABLED,
     SPLIT_MONTHS_DEFAULT,
+    SPLIT_PAYMENT_METHOD_DATA_TYPE,
     LOYALTY_ENABLED,
     LOYALTY_MAX_PERCENT,
     LOYALTY_RATE,
@@ -48,6 +50,33 @@ from backend.moysklad import create_customerorder, is_moysklad_ready, moysklad_n
 from backend.ui_content import ensure_ui_storage, get_ui_content
 
 log = logging.getLogger("plombir")
+
+
+def _tg_html_escape(s: object) -> str:
+    """Экранирование для Telegram HTML (без parse_mode Markdown — он ломается на _, * в ФИО/адресе)."""
+    return html.escape(str(s if s is not None else ""), quote=False)
+
+
+async def _telegram_send_message(chat_id: str, text: str, *, parse_mode: str = "HTML") -> bool:
+    """Отправка в Telegram с таймаутом; True если ок."""
+    if not BOT_TOKEN or not chat_id:
+        return False
+    import httpx
+
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            r = await client.post(
+                url,
+                json={"chat_id": chat_id, "text": text, "parse_mode": parse_mode},
+            )
+            if r.status_code >= 400:
+                log.warning("Telegram sendMessage HTTP %s: %s", r.status_code, (r.text or "")[:300])
+                return False
+            return True
+    except Exception as e:
+        log.warning("Telegram sendMessage error: %s", e)
+        return False
 
 # ── Кэш данных ──
 _cache: dict = {
@@ -183,8 +212,13 @@ async def integrations_public_config():
     return {
         "payments": {
             "yookassa_enabled": bool(YOOKASSA_ENABLED and is_yookassa_ready()),
+            # Виджеты/badge: нужен merchant id. Оплата сплитом всё равно через ЮKassa (create_payment).
             "split_enabled": bool(SPLIT_ENABLED and YANDEX_PAY_MERCHANT_ID),
             "split_months_default": SPLIT_MONTHS_DEFAULT,
+            # Что реально уходит в ЮKassa для split (для отладки / согласования с кабинетом)
+            "split_payment_method_data": SPLIT_PAYMENT_METHOD_DATA_TYPE
+            if SPLIT_PAYMENT_METHOD_DATA_TYPE in {"yandex_pay", "bank_card"}
+            else "yandex_pay",
             "methods": ["manual", "card", "split"],
             "yandex_pay_sdk_url": YANDEX_PAY_SDK_URL,
             "yandex_pay_merchant_id": YANDEX_PAY_MERCHANT_ID,
@@ -720,6 +754,7 @@ async def yookassa_webhook(request: Request):
                     sync_error=f"MoySklad не настроен: {reason}"[:500],
                 )
             asyncio.create_task(_notify_customer_status(order))
+            asyncio.create_task(_notify_admin_payment_paid(order))
     elif event in {"payment.canceled"}:
         update_order_payment(
             order_id,
@@ -737,68 +772,76 @@ async def yookassa_webhook(request: Request):
 
 
 async def _notify_admin(order: dict):
-    """Отправляем уведомление о заказе админу через Telegram Bot API."""
+    """Отправляем уведомление о заказе админу через Telegram Bot API (HTML — без срыва от _, * в текстах)."""
     if not BOT_TOKEN or not ADMIN_CHAT_ID:
-        print("⚠️ BOT_TOKEN или ADMIN_CHAT_ID не указан — уведомление не отправлено")
+        log.warning("BOT_TOKEN или ADMIN_CHAT_ID не указан — уведомление админу пропущено")
         return
-
-    import httpx
 
     items_text = ""
     for item in order["items"]:
-        line = f"  • {item['name']}"
+        line = f"  • {_tg_html_escape(item.get('name'))}"
         if item.get("variant_label"):
-            line += f" ({item['variant_label']})"
+            line += f" ({_tg_html_escape(item['variant_label'])})"
         line += f" × {item['quantity']} — {int(item['price'] * item['quantity'])} ₽"
         items_text += line + "\n"
 
     text = (
-        f"🆕 *Новый заказ #{order['id']}*\n\n"
-        f"👤 {order['customer_name']}\n"
-        f"📞 {order['customer_phone']}\n"
+        f"🆕 <b>Новый заказ #{order['id']}</b>\n\n"
+        f"👤 {_tg_html_escape(order.get('customer_name'))}\n"
+        f"📞 {_tg_html_escape(order.get('customer_phone'))}\n"
     )
     if order.get("delivery_address"):
-        text += f"📍 {order['delivery_address']}\n"
+        text += f"📍 {_tg_html_escape(order['delivery_address'])}\n"
     if order.get("delivery_type"):
-        text += f"🚚 Тип доставки: {order['delivery_type']}\n"
+        text += f"🚚 Тип доставки: {_tg_html_escape(order['delivery_type'])}\n"
     if order.get("delivery_date"):
-        text += f"📅 {order['delivery_date']}"
+        text += f"📅 {_tg_html_escape(order['delivery_date'])}"
         if order.get("delivery_time"):
-            text += f" {order['delivery_time']}"
+            text += f" {_tg_html_escape(order['delivery_time'])}"
         text += "\n"
     if order.get("recipient_name"):
-        text += f"🎁 Получатель: {order['recipient_name']}\n"
+        text += f"🎁 Получатель: {_tg_html_escape(order['recipient_name'])}\n"
     if order.get("recipient_phone"):
-        text += f"📲 Тел. получателя: {order['recipient_phone']}\n"
+        text += f"📲 Тел. получателя: {_tg_html_escape(order['recipient_phone'])}\n"
     if order.get("contact_method"):
-        text += f"☎️ Связь: {order['contact_method']}\n"
+        text += f"☎️ Связь: {_tg_html_escape(order['contact_method'])}\n"
     if order.get("courier_comment"):
-        text += f"🛵 Курьеру: {order['courier_comment']}\n"
+        text += f"🛵 Курьеру: {_tg_html_escape(order['courier_comment'])}\n"
     if order.get("card_text"):
-        text += f"💌 Открытка: {order['card_text']}\n"
+        text += f"💌 Открытка: {_tg_html_escape(order['card_text'])}\n"
     if order.get("comment"):
-        text += f"💬 {order['comment']}\n"
+        text += f"💬 {_tg_html_escape(order['comment'])}\n"
 
-    text += f"\n📦 *Товары:*\n{items_text}\n💰 *Итого: {int(order['total'])} ₽*"
+    text += f"\n📦 <b>Товары:</b>\n{items_text}\n💰 <b>Итого: {int(order['total'])} ₽</b>"
 
     admin_ids = [part.strip() for part in str(ADMIN_CHAT_ID).split(",") if part.strip()]
     if not admin_ids:
         return
 
-    try:
-        async with httpx.AsyncClient() as client:
-            for chat_id in admin_ids:
-                await client.post(
-                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-                    json={
-                        "chat_id": chat_id,
-                        "text": text,
-                        "parse_mode": "Markdown",
-                    },
-                )
-            print(f"✅ Уведомление отправлено: заказ #{order['id']}")
-    except Exception as e:
-        print(f"⚠️ Ошибка отправки уведомления: {e}")
+    ok_any = False
+    for chat_id in admin_ids:
+        if await _telegram_send_message(chat_id, text):
+            ok_any = True
+    if ok_any:
+        log.info("Уведомление админу отправлено: заказ #%s", order['id'])
+    else:
+        log.warning("Не удалось отправить уведомление админу по заказу #%s", order['id'])
+
+
+async def _notify_admin_payment_paid(order: dict):
+    """Короткая отбивка админу после успешной оплаты (ЮKassa webhook)."""
+    if not BOT_TOKEN or not ADMIN_CHAT_ID:
+        return
+    oid = order.get("id")
+    total = order.get("total")
+    pm = _tg_html_escape(order.get("payment_method") or "")
+    text = (
+        f"✅ <b>Оплата получена</b> · заказ <b>#{oid}</b>\n"
+        f"Сумма: {int(total or 0)} ₽ · способ: {pm or '—'}"
+    )
+    admin_ids = [part.strip() for part in str(ADMIN_CHAT_ID).split(",") if part.strip()]
+    for chat_id in admin_ids:
+        await _telegram_send_message(chat_id, text)
 
 
 async def _notify_customer_status(order: dict):
@@ -817,18 +860,10 @@ async def _notify_customer_status(order: dict):
     }
     text = (
         f"📦 Заказ #{order.get('id')}\n"
-        f"Статус: *{status}*\n"
-        f"{status_map.get(status, '')}"
+        f"Статус: <b>{_tg_html_escape(status)}</b>\n"
+        f"{_tg_html_escape(status_map.get(status, ''))}"
     )
-    import httpx
-    try:
-        async with httpx.AsyncClient() as client:
-            await client.post(
-                f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-                json={"chat_id": tg_user_id, "text": text, "parse_mode": "Markdown"},
-            )
-    except Exception as e:
-        print(f"⚠️ Ошибка отправки статуса клиенту: {e}")
+    await _telegram_send_message(tg_user_id, text)
 
 
 # ── Mini App (статика) ──

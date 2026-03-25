@@ -4,8 +4,13 @@ Telegram Bot для Plombir Flowers.
 Кнопка открытия Mini App + callback-обработка.
 """
 from pathlib import Path
+import html
 import logging
 import uuid
+
+
+def _tg_html_escape(s: object) -> str:
+    return html.escape(str(s if s is not None else ""), quote=False)
 
 from telegram import (
     Update,
@@ -145,11 +150,11 @@ async def _notify_customer_status_from_bot(context: ContextTypes.DEFAULT_TYPE, o
     }
     text = (
         f"📦 Заказ #{order.get('id')}\n"
-        f"Статус: *{status}*\n"
-        f"{status_map.get(status, '')}"
+        f"Статус: <b>{_tg_html_escape(status)}</b>\n"
+        f"{_tg_html_escape(status_map.get(status, ''))}"
     )
     try:
-        await context.bot.send_message(chat_id=user_id, text=text, parse_mode="Markdown")
+        await context.bot.send_message(chat_id=user_id, text=text, parse_mode="HTML")
     except Exception:
         pass
 
@@ -195,14 +200,14 @@ async def cmd_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for order in orders:
         line = (
             f"📦 Заказ #{order['id']}\n"
-            f"👤 {order.get('customer_name') or '-'}\n"
-            f"📞 {order.get('customer_phone') or '-'}\n"
+            f"👤 {_tg_html_escape(order.get('customer_name')) or '-'}\n"
+            f"📞 {_tg_html_escape(order.get('customer_phone')) or '-'}\n"
             f"💰 {int(order.get('total') or 0)} ₽\n"
-            f"Статус: *{order.get('status') or 'Создан'}*"
+            f"Статус: <b>{_tg_html_escape(order.get('status') or 'Создан')}</b>"
         )
         await update.message.reply_text(
             line,
-            parse_mode="Markdown",
+            parse_mode="HTML",
             reply_markup=_order_status_keyboard(order["id"]),
         )
 
@@ -392,12 +397,12 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(
             (
                 f"📦 Заказ #{order['id']}\n"
-                f"👤 {order.get('customer_name') or '-'}\n"
-                f"📞 {order.get('customer_phone') or '-'}\n"
+                f"👤 {_tg_html_escape(order.get('customer_name')) or '-'}\n"
+                f"📞 {_tg_html_escape(order.get('customer_phone')) or '-'}\n"
                 f"💰 {int(order.get('total') or 0)} ₽\n"
-                f"Статус: *{order.get('status') or 'Создан'}*"
+                f"Статус: <b>{_tg_html_escape(order.get('status') or 'Создан')}</b>"
             ),
-            parse_mode="Markdown",
+            parse_mode="HTML",
             reply_markup=_order_status_keyboard(order["id"]),
         )
         return
@@ -424,12 +429,12 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not orders:
             await query.message.reply_text("📦 У вас пока нет заказов.")
             return
-        lines = ["📦 *Мои заказы*"]
+        lines = ["📦 <b>Мои заказы</b>"]
         for o in orders[:10]:
             lines.append(
-                f"• #{o['id']} — *{o.get('status') or 'Создан'}* — {int(o.get('total') or 0)} ₽"
+                f"• #{o['id']} — <b>{_tg_html_escape(o.get('status') or 'Создан')}</b> — {int(o.get('total') or 0)} ₽"
             )
-        await query.message.reply_text("\n".join(lines), parse_mode="Markdown")
+        await query.message.reply_text("\n".join(lines), parse_mode="HTML")
 
 
 # ── Настройка ──

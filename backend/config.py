@@ -72,6 +72,9 @@ TILDA_MOYSKLAD_WEBHOOK_TOKEN = os.getenv("TILDA_MOYSKLAD_WEBHOOK_TOKEN", "")
 
 SPLIT_ENABLED = _bool_env("SPLIT_ENABLED", default=True)
 SPLIT_MONTHS_DEFAULT = _int_env("SPLIT_MONTHS_DEFAULT", default=4)
+# Сплит создаётся через API ЮKassa: тип способа оплаты для редиректа на Яндекс Пэй (Сплит на стороне Яндекса).
+# yandex_pay — по умолчанию; bank_card — только отладка (общая страница ЮKassa, сплит может быть недоступен как отдельный сценарий).
+SPLIT_PAYMENT_METHOD_DATA_TYPE = (os.getenv("SPLIT_PAYMENT_METHOD_DATA_TYPE", "yandex_pay") or "yandex_pay").strip().lower()
 YANDEX_PAY_SDK_URL = os.getenv("YANDEX_PAY_SDK_URL", "https://pay.yandex.ru/sdk/v1/pay.js")
 YANDEX_PAY_MERCHANT_ID = os.getenv("YANDEX_PAY_MERCHANT_ID", "")
 YANDEX_PAY_THEME = os.getenv("YANDEX_PAY_THEME", "light")

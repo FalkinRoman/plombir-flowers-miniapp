@@ -13,6 +13,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import httpx
 
 from backend.config import (
+    SPLIT_PAYMENT_METHOD_DATA_TYPE,
     YOOKASSA_ENABLED,
     YOOKASSA_RETURN_URL,
     YOOKASSA_SECRET_KEY,
@@ -62,8 +63,8 @@ async def create_payment(
     """
     Создает платеж в ЮKassa и возвращает raw response.
     payment_method:
-      - card -> bank_card
-      - split -> sbp / yandex_pay (фактическая доступность зависит от кабинета)
+      - card -> bank_card (страница ЮKassa)
+      - split -> yandex_pay по умолчанию (редирект на Яндекс Пэй; Сплит — если подключён в кабинете ЮKassa/Яндекс)
     """
     if not is_yookassa_ready():
         raise PaymentConfigError("ЮKassa не настроена: включите флаг и заполните ключи")
@@ -72,9 +73,8 @@ async def create_payment(
     if payment_method == "card":
         method_data = {"type": "bank_card"}
     elif payment_method == "split":
-        # Сплит в реальности доступен при включенном Yandex Pay/Split в кабинете.
-        # Здесь указываем yandex_pay как предпочтительный сценарий.
-        method_data = {"type": "yandex_pay"}
+        sm = SPLIT_PAYMENT_METHOD_DATA_TYPE if SPLIT_PAYMENT_METHOD_DATA_TYPE in {"yandex_pay", "bank_card"} else "yandex_pay"
+        method_data = {"type": sm}
 
     payload = {
         "amount": {
@@ -89,6 +89,7 @@ async def create_payment(
         "description": description,
         "metadata": {
             "order_id": str(order_id),
+            "payment_flow": payment_method,
         },
     }
     if method_data:

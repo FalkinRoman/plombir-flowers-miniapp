@@ -81,6 +81,7 @@ let state = {
             yookassa_enabled: false,
             split_enabled: false,
             split_months_default: 4,
+            split_payment_method_data: 'yandex_pay',
             yandex_pay_sdk_url: 'https://pay.yandex.ru/sdk/v1/pay.js',
             yandex_pay_merchant_id: '',
             yandex_pay_theme: 'light',
@@ -1479,7 +1480,10 @@ function openOrderForm() {
 
     const subtotal = getCartTotal();
     const supportsCard = !!state.integrations?.payments?.yookassa_enabled;
-    const supportsSplit = !!state.integrations?.payments?.split_enabled;
+    // Сплит: и ЮKassa (создание платежа), и merchant id (виджеты Яндекс Пэй в UI)
+    const supportsSplit = !!(
+        state.integrations?.payments?.split_enabled && state.integrations?.payments?.yookassa_enabled
+    );
     const loyaltyEnabled = !!state.integrations?.loyalty?.enabled;
     const initialPricing = calculateOrderPricing(subtotal, 0);
     state.orderPricing = initialPricing;
@@ -1591,7 +1595,7 @@ function openOrderForm() {
                         <input type="radio" name="payment_method" value="split" ${supportsSplit ? '' : 'disabled'} />
                         <div>
                             <strong>Яндекс Сплит</strong>
-                            <span>${supportsSplit ? `Платеж частями: от ${formatPrice(initialPricing.split_monthly_payment)} x ${initialPricing.split_months}.` : 'Появится после активации Сплит в ЮKassa.'}</span>
+                            <span>${supportsSplit ? `Платеж частями (Яндекс Пэй): от ${formatPrice(initialPricing.split_monthly_payment)} × ${initialPricing.split_months} мес. Редирект на Яндекс после оформления.` : 'Нужны ЮKassa + merchant id Яндекс Пэй (см. .env).'}</span>
                         </div>
                     </label>
                 </div>
@@ -1792,14 +1796,19 @@ async function submitOrder(e) {
 }
 
 function showPaymentAwaitingRedirect(orderId, paymentMethod, confirmationUrl) {
-    const methodTitle = paymentMethod === 'split' ? 'Яндекс Сплит' : 'Онлайн-оплата картой';
+    const isSplit = paymentMethod === 'split';
+    const methodTitle = isSplit ? 'Яндекс Сплит (Яндекс Пэй)' : 'Онлайн-оплата картой';
+    const detail = isSplit
+        ? 'Откроется страница Яндекс Пэй. Сплит — если подключён в кабинете (платёж создаётся через ЮKassa).'
+        : 'Сейчас откроется защищённая страница ЮKassa.';
+    const safeUrl = String(confirmationUrl || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     $screenSuccess.innerHTML = `
         <div class="success">
             <div class="success__icon">↗</div>
             <h2 class="success__title">Переходим к оплате</h2>
             <p class="success__text">Заказ <strong>#${orderId}</strong> создан.</p>
-            <p class="success__text">${methodTitle}. Сейчас откроется защищенная страница ЮKassa.</p>
-            <button class="btn-primary success__btn" onclick="openExternalUrl('${confirmationUrl}')">Перейти к оплате</button>
+            <p class="success__text">${methodTitle}. ${detail}</p>
+            <button class="btn-primary success__btn" onclick="openExternalUrl('${safeUrl}')">Перейти к оплате</button>
             <button class="btn-secondary success__btn" onclick="showScreen('catalog')">Вернуться в каталог</button>
         </div>
     `;
@@ -1830,6 +1839,21 @@ function clearPaymentParamsFromUrl() {
     }
 }
 
+async function fetchOrderById(orderId) {
+    const res = await fetch(`${API}/orders/${orderId}`);
+    if (!res.ok) throw new Error('order fetch failed');
+    return res.json();
+}
+
+function _orderPaymentResolved(order) {
+    const paymentStatus = String(order?.payment_status || '').toLowerCase();
+    const orderStatus = order?.status || 'Создан';
+    const isPaid =
+        ['succeeded', 'waiting_for_capture'].includes(paymentStatus) || orderStatus === 'Оплачен';
+    const isCanceled = ['canceled'].includes(paymentStatus) || orderStatus === 'Отменен';
+    return { isPaid, isCanceled };
+}
+
 async function handlePaymentReturnFromUrl() {
     const params = new URLSearchParams(window.location.search);
     const orderIdRaw = params.get('order_id');
@@ -1840,9 +1864,17 @@ async function handlePaymentReturnFromUrl() {
         return;
     }
     try {
-        const res = await fetch(`${API}/orders/${orderId}`);
-        if (!res.ok) throw new Error('order fetch failed');
-        const order = await res.json();
+        let order = await fetchOrderById(orderId);
+        const maxAttempts = 12;
+        const delayMs = 2500;
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            const { isPaid, isCanceled } = _orderPaymentResolved(order);
+            if (isPaid || isCanceled) break;
+            if (attempt < maxAttempts - 1) {
+                await new Promise((r) => setTimeout(r, delayMs));
+                order = await fetchOrderById(orderId);
+            }
+        }
         showPaymentReturnStatus(order);
     } catch (e) {
         console.error('Не удалось проверить статус оплаты после возврата:', e);
@@ -1858,9 +1890,10 @@ function showPaymentReturnStatus(order) {
     const isPaid = ['succeeded', 'waiting_for_capture'].includes(paymentStatus) || orderStatus === 'Оплачен';
     const isCanceled = ['canceled'].includes(paymentStatus) || orderStatus === 'Отменен';
     const paymentUrl = order?.payment_url || '';
+    const safePayUrl = String(paymentUrl).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
     let title = 'Статус оплаты';
-    let text = 'Проверяем оплату. Обычно подтверждение приходит за несколько секунд.';
+    let text = 'Вебхук ещё не подтвердил оплату. Подождите минуту или откройте «Мои заказы».';
     let icon = '…';
 
     if (isPaid) {
@@ -1879,7 +1912,7 @@ function showPaymentReturnStatus(order) {
             <h2 class="success__title">${title}</h2>
             <p class="success__text">Номер заказа: <strong>#${order.id}</strong></p>
             <p class="success__text">${text}</p>
-            ${paymentUrl && !isPaid ? `<button class="btn-primary success__btn" onclick="openExternalUrl('${paymentUrl}')">Оплатить заказ</button>` : ''}
+            ${paymentUrl && !isPaid ? `<button class="btn-primary success__btn" onclick="openExternalUrl('${safePayUrl}')">Оплатить заказ</button>` : ''}
             <button class="btn-secondary success__btn" onclick="showScreen('catalog')">Вернуться в каталог</button>
         </div>
     `;

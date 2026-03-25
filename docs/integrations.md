@@ -4,6 +4,8 @@
 
 ## 1) ЮKassa + Yandex Pay / Split
 
+**Важно:** отдельного «API только Яндекс» для приёма денег в этом проекте нет — платёж создаётся в **ЮKassa**. Для сплита в теле запроса указывается `payment_method_data.type: yandex_pay` (редирект на **Яндекс Пэй**; Сплит доступен, если продукт включён в кабинете ЮKassa/Яндекс). Переменная `SPLIT_PAYMENT_METHOD_DATA_TYPE` (по умолчанию `yandex_pay`) переопределяет тип; `bank_card` — только отладка.
+
 - `YOOKASSA_ENABLED=1`
 - `YOOKASSA_SHOP_ID=...`
 - `YOOKASSA_SECRET_KEY=...`
@@ -12,6 +14,7 @@
 - `YOOKASSA_WEBHOOK_SECRET=<любой_секрет>`
 - `SPLIT_ENABLED=1`
 - `SPLIT_MONTHS_DEFAULT=4`
+- `SPLIT_PAYMENT_METHOD_DATA_TYPE=yandex_pay` (или `bank_card` для отладки)
 - `YANDEX_PAY_SDK_URL=https://pay.yandex.ru/sdk/v1/pay.js`
 - `YANDEX_PAY_MERCHANT_ID=<merchant_id>`
 - `YANDEX_PAY_THEME=light`

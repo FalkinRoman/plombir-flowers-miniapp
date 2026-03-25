@@ -196,6 +196,15 @@ async def create_customerorder(order: dict) -> Optional[str]:
             }
         }
 
+    # Плановая дата доставки на документе (отображается в списке/карточке заказа МС)
+    delivery_date_raw = str(order.get("delivery_date") or "").strip()
+    if delivery_date_raw:
+        try:
+            d = dt.datetime.strptime(delivery_date_raw, "%Y-%m-%d")
+            payload["deliveryPlannedMoment"] = d.strftime("%Y-%m-%d 12:00:00.000")
+        except ValueError:
+            pass
+
     positions = await _build_positions(order)
     total = float(order.get("total") or 0)
     if total > 0 and not positions:
