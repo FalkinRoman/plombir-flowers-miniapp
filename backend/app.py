@@ -75,6 +75,18 @@ def _tg_html_escape(s: object) -> str:
     return html.escape(str(s if s is not None else ""), quote=False)
 
 
+def _infer_ms_entity_type(meta: dict) -> str:
+    """Тип сущности для кэша: у assortment в meta.type иногда пусто/«assortment» — берём из href."""
+    t = str((meta or {}).get("type") or "").strip()
+    if t and t.lower() != "assortment":
+        return t
+    h = str((meta or {}).get("href") or "").lower()
+    for p in ("variant", "product", "service", "bundle", "consignment"):
+        if f"/entity/{p}/" in h:
+            return p
+    return "product"
+
+
 async def _telegram_send_message(chat_id: str, text: str, *, parse_mode: str = "HTML") -> bool:
     """Отправка в Telegram с таймаутом; True если ок."""
     if not BOT_TOKEN or not chat_id:
@@ -832,13 +844,13 @@ async def admin_mapping_stats(request: Request):
 async def admin_feed_products(
     request: Request,
     q: str = "",
-    limit: int = 300,
+    limit: int = 100_000,
     unmapped_only: bool = False,
 ):
     _require_admin(request)
-    lim = max(1, min(limit, 2000))
+    lim = max(1, min(limit, 100_000))
     needle = (q or "").strip().lower()
-    mappings = {m.get("tilda_key"): m for m in list_product_mappings(limit=5000)}
+    mappings = {m.get("tilda_key"): m for m in list_product_mappings(limit=200_000)}
     rows = []
     for p in _cache["products"]:
         variants = p.get("variants") or []
@@ -912,7 +924,7 @@ async def admin_refresh_moysklad_cache(request: Request):
                 rows.append({
                     "ms_id": str((r or {}).get("id") or ""),
                     "ms_href": str(meta.get("href") or ""),
-                    "ms_type": str(meta.get("type") or "assortment"),
+                    "ms_type": _infer_ms_entity_type(meta),
                     "name": str((r or {}).get("name") or ""),
                     "code": str((r or {}).get("code") or ""),
                     "external_code": str((r or {}).get("externalCode") or ""),
@@ -926,7 +938,7 @@ async def admin_refresh_moysklad_cache(request: Request):
 
 
 @app.get("/api/admin/moysklad/cache/search")
-async def admin_search_moysklad_cache(request: Request, q: str = "", limit: int = 100):
+async def admin_search_moysklad_cache(request: Request, q: str = "", limit: int = 50_000):
     _require_admin(request)
     return search_ms_assortment_cache(query=q, limit=limit)
 

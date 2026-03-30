@@ -22,37 +22,29 @@ let token = localStorage.getItem(TOKEN_KEY) || "";
 let ordersCache = [];
 let selectedFeedItem = null;
 
-/** Визард: 1 — фид Tilda, 2 — кэш МС, 3 — список непромапленных, 4 — можно маппить */
+/** Подсветка шагов: 1 — фид, 2 — кэш МС, ≥3 — оба готовы */
 let mapWizardPhase = 1;
 
 function updateMapWizardUI() {
   const b1 = $("btn-feed-refresh");
   const b2 = $("btn-ms-refresh");
-  const b3 = $("btn-feed-load");
-  if (!b1 || !b2 || !b3) return;
-  [b1, b2, b3].forEach((b) => b.classList.remove("wizard-btn--active", "wizard-btn--done", "wizard-btn--idle"));
+  if (!b1 || !b2) return;
+  [b1, b2].forEach((b) => b.classList.remove("wizard-btn--active", "wizard-btn--done", "wizard-btn--idle"));
   const ph = mapWizardPhase;
   if (ph <= 1) {
     b1.classList.add("wizard-btn--active");
     b2.classList.add("wizard-btn--idle");
-    b3.classList.add("wizard-btn--idle");
   } else if (ph === 2) {
     b1.classList.add("wizard-btn--done");
     b2.classList.add("wizard-btn--active");
-    b3.classList.add("wizard-btn--idle");
-  } else if (ph === 3) {
-    b1.classList.add("wizard-btn--done");
-    b2.classList.add("wizard-btn--done");
-    b3.classList.add("wizard-btn--active");
   } else {
     b1.classList.add("wizard-btn--done");
     b2.classList.add("wizard-btn--done");
-    b3.classList.add("wizard-btn--done");
   }
 }
 
 const EMPTY_MS =
-  '<div class="item small">Нет строк в локальном кэше. Сначала «Обновить кэш МС», затем снова выбери товар или «Искать».</div>';
+  '<div class="item small">Пусто. Обнови кэш МС или измени поиск.</div>';
 
 function renderMsList(rows, opts = {}) {
   const mode = opts.mode || "search";
@@ -61,8 +53,8 @@ function renderMsList(rows, opts = {}) {
     const web = String(r.ms_web_url || "").trim();
     const hrefHint = esc(r.ms_href || "");
     const webBlock = web
-      ? `<div class="small"><a href="${esc(web)}" target="_blank" rel="noopener noreferrer" title="API: ${hrefHint}">Открыть в МойСклад ↗</a></div>`
-      : `<div class="small" style="color:#94a3b8">Нет веб-ссылки (пустой ms_id)</div>`;
+      ? `<div class="small"><a href="${esc(web)}" target="_blank" rel="noopener noreferrer" title="${hrefHint}">В МС ↗</a></div>`
+      : "";
     return `
     <div class="item">
       ${showScore ? `<div class="small" style="color:#065f46;font-weight:600;">~${Math.round(Number(r.score || 0) * 100)}% совпадение</div>` : ""}
@@ -271,7 +263,7 @@ function closeOrderDetail() {
 }
 
 const EMPTY_FEED =
-  '<div class="item small">Нет строк: либо всё уже промаплено, либо нет совпадений по поиску. Попробуйте «Обновить фид» или снимите фильтр (пока только непромапленные).</div>';
+  '<div class="item small">Пусто: всё промаплено или нет совпадений с фильтром.</div>';
 
 async function loadMappingStats() {
   const el = $("map-stats");
@@ -282,7 +274,7 @@ async function loadMappingStats() {
       s.mappings_db_rows != null && Number(s.mappings_db_rows) !== Number(s.mapped_count)
         ? ` · записей в таблице маппинга: ${s.mappings_db_rows}`
         : "";
-    el.textContent = `В фиде позиций (варианты): ${s.feed_variants_total} · Промаплено: ${s.mapped_count} · Осталось: ${s.unmapped_count} · Строк в кэше МС: ${s.ms_cache_rows}${extra}`;
+    el.textContent = `Фид: ${s.feed_variants_total} · С маппингом: ${s.mapped_count} · Без: ${s.unmapped_count} · Кэш МС: ${s.ms_cache_rows}${extra}`;
     el.style.color = "#374151";
   } catch (e) {
     el.textContent = `Счётчики: ${e.message}`;
@@ -296,11 +288,7 @@ async function refreshFeed() {
     const data = await api("/admin/feed/refresh", { method: "POST" });
     mapWizardPhase = 2;
     updateMapWizardUI();
-    setMsg(
-      "map-msg",
-      `Фид обновлён: ${data.products_count} товаров, ${data.categories_count} категорий${data.last_update ? ` · ${data.last_update}` : ""}. Дальше — шаг 2 (кэш МС).`,
-      true,
-    );
+    setMsg("map-msg", `Фид: ${data.products_count} товаров · дальше кэш МС`, true);
     await loadFeedProducts();
   } catch (e) {
     setMsg("map-msg", `Ошибка: ${e.message}`);
@@ -313,18 +301,18 @@ function clearMappingForm() {
   $("map-ms-id").value = "";
   $("map-ms-name").value = "";
   $("ms-q").value = "";
-  $("ms-list").innerHTML = '<div class="item small">Форма очищена. Выбери товар слева или введи поиск в МС.</div>';
-  setMsg("map-msg", "Поля связки и поиск МС сброшены.", true);
+  $("ms-list").innerHTML = '<div class="item small">Сброс. Выбери слева или найди в МС.</div>';
+  setMsg("map-msg", "Сброшено.", true);
 }
 
 async function loadFeedProducts() {
   const q = $("feed-q").value.trim();
-  const rows = await api(`/admin/feed-products?limit=300&unmapped_only=true&q=${encodeURIComponent(q)}`);
+  const rows = await api(`/admin/feed-products?limit=100000&unmapped_only=true&q=${encodeURIComponent(q)}`);
   $("feed-list").innerHTML = rows.map((r) => {
     const tu = String(r.tilda_url || "").trim();
     const tildaLink = tu
-      ? `<div class="small"><a href="${esc(tu)}" target="_blank" rel="noopener noreferrer">Страница на сайте (Tilda) ↗</a></div>`
-      : `<div class="small" style="color:#94a3b8">В YML нет ссылки на страницу — открой карточку в Tilda вручную (по key)</div>`;
+      ? `<div class="small"><a href="${esc(tu)}" target="_blank" rel="noopener noreferrer">На сайте ↗</a></div>`
+      : "";
     return `
     <div class="item">
       <div><strong>${esc(r.name)}</strong></div>
@@ -332,7 +320,7 @@ async function loadFeedProducts() {
       ${tildaLink}
       <button type="button" class="secondary btn-pick-feed"
         data-k="${encodeURIComponent(String(r.tilda_key))}"
-        data-name="${encodeURIComponent(String(r.name || ""))}">Выбрать товар</button>
+        data-name="${encodeURIComponent(String(r.name || ""))}">Выбрать</button>
     </div>`;
   }).join("") || EMPTY_FEED;
   await loadMappingStats();
@@ -350,29 +338,24 @@ async function suggestMsForFeed(feedName, tildaKey) {
   if (!rows.length) {
     $("ms-q").value = (feedName || "").replace(/\s*-\s*.*$/, "").trim() || tildaKey;
     await searchMs();
-    setMsg("map-msg", "Автоподбор пуст — открыт ручной поиск по названию.", false);
+    setMsg("map-msg", "Нет авто-совпадений — смотри поиск справа.", false);
     return;
   }
-  const top = rows[0];
-  setMsg(
-    "map-msg",
-    `Топ-${rows.length} кандидатов. Часто хватает первой строки → «Выбрать» → «Сохранить». Лучший: «${(top.name || "").slice(0, 60)}${(top.name || "").length > 60 ? "…" : ""}»`,
-    true,
-  );
+  setMsg("map-msg", `${rows.length} кандидатов · «Выбрать» → «Сохранить»`, true);
 }
 
 async function searchMs() {
   const q = $("ms-q").value.trim();
-  const rows = await api(`/admin/moysklad/cache/search?q=${encodeURIComponent(q)}&limit=200`);
+  const rows = await api(`/admin/moysklad/cache/search?q=${encodeURIComponent(q)}&limit=50000`);
   let finalRows = rows;
   let note = "";
   if (q && (!Array.isArray(rows) || rows.length === 0)) {
-    finalRows = await api("/admin/moysklad/cache/search?q=&limit=200");
-    note = `По запросу «${q}» нет совпадений (несколько слов — все должны встретиться). Показаны первые ${finalRows.length} позиций из кэша.`;
+    finalRows = await api("/admin/moysklad/cache/search?q=&limit=50000");
+    note = `Нет совпадений с «${q}». Показаны все ${finalRows.length} поз. из кэша (без фильтра).`;
   }
   renderMsList(finalRows, { mode: "search" });
   if (note) setMsg("map-msg", note);
-  else setMsg("map-msg", `Найдено в кэше МС: ${finalRows.length}${q ? "" : " (пустой поиск — первые 200)"}`, true);
+  else setMsg("map-msg", `${finalRows.length} в кэше`, true);
 }
 
 async function refreshMsCache() {
@@ -381,7 +364,7 @@ async function refreshMsCache() {
     const data = await api("/admin/moysklad/cache/refresh", { method: "POST" });
     mapWizardPhase = 3;
     updateMapWizardUI();
-    setMsg("map-msg", `Кэш обновлён: ${data.count} позиций. Дальше — шаг 3 (список непромапленных).`, true);
+    setMsg("map-msg", `Кэш МС: ${data.count} поз. · слева «Показать»`, true);
     await loadMappingStats();
   } catch (e) {
     setMsg("map-msg", `Ошибка: ${e.message}`);
@@ -400,7 +383,7 @@ async function saveMapping() {
   if (!payload.tilda_key || !payload.ms_href) return setMsg("map-msg", "Нужны tilda key и ms href");
   try {
     await api("/admin/mappings", { method: "POST", body: JSON.stringify(payload) });
-    setMsg("map-msg", "Маппинг сохранён", true);
+    setMsg("map-msg", "Сохранено", true);
     await loadMappings();
     await loadFeedProducts();
   } catch (e) {
@@ -465,7 +448,7 @@ function bindMappingClicks() {
     $("map-ms-href").value = "";
     $("map-ms-id").value = "";
     $("map-ms-name").value = "";
-    setMsg("map-msg", `Выбран товар из фида: ${name || key}. Подбираю кандидатов в МС…`, true);
+    setMsg("map-msg", "Ищу в МС…", true);
     suggestMsForFeed(name, key).catch((e) => setMsg("map-msg", e.message));
   });
   $("ms-list").addEventListener("click", (ev) => {
@@ -474,7 +457,7 @@ function bindMappingClicks() {
     $("map-ms-href").value = decodeURIComponent(btn.dataset.href || "");
     $("map-ms-id").value = decodeURIComponent(btn.dataset.mid || "");
     $("map-ms-name").value = decodeURIComponent(btn.dataset.mname || "");
-    setMsg("map-msg", "Позиция МС подставлена — нажмите «Сохранить маппинг».", true);
+    setMsg("map-msg", "Ок · «Сохранить»", true);
   });
 }
 
@@ -488,7 +471,7 @@ function bind() {
   $("btn-feed-load").addEventListener("click", () =>
     loadFeedProducts()
       .then(() => {
-        mapWizardPhase = 4;
+        mapWizardPhase = 3;
         updateMapWizardUI();
       })
       .catch((e) => setMsg("map-msg", e.message)),

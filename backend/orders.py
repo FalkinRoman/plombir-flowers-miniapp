@@ -537,7 +537,7 @@ def get_product_mapping_meta(*keys: str) -> Optional[dict]:
 
 
 def list_product_mappings(limit: int = 500, search: str = "") -> list[dict]:
-    lim = max(1, min(int(limit), 5000))
+    lim = max(1, min(int(limit), 200_000))
     q = f"%{(search or '').strip().lower()}%"
     conn = _get_conn()
     if q == "%%":
@@ -598,25 +598,38 @@ def replace_ms_assortment_cache(rows: list[dict]):
     conn.close()
 
 
-def ms_online_web_url(ms_type: str, ms_id: str) -> str:
-    """Ссылка на карточку в веб-интерфейсе МойСклада (не API href)."""
-    tid = (ms_type or "").lower().strip()
+def ms_online_web_url(ms_href: str, ms_type: str, ms_id: str) -> str:
+    """
+    Ссылка на карточку в веб-интерфейсе МойСклада (не API href).
+    Важно: модификации (variant) открываются через #variant/edit — id товара в #good/edit
+    даст «не найден», хотя по коду позиция в списке есть.
+    """
     mid = (ms_id or "").strip()
     if not mid:
         return ""
     base = "https://online.moysklad.ru/app/#"
-    if tid == "variant":
+    href = (ms_href or "").lower()
+    tid = (ms_type or "").lower().strip()
+    # Надёжнее всего — сегмент entity/... в API href из кэша
+    if "/entity/variant/" in href or tid == "variant":
         return f"{base}variant/edit?id={mid}"
-    if tid == "service":
+    if "/entity/service/" in href or tid == "service":
         return f"{base}service/edit?id={mid}"
-    if tid in ("bundle", "consignment"):
-        return f"{base}good/edit?id={mid}"
+    if "/entity/bundle/" in href or tid == "bundle":
+        return f"{base}bundle/edit?id={mid}"
+    if "/entity/consignment/" in href:
+        return f"{base}consignment/edit?id={mid}"
+    # product, unknown, ошибочный тип «assortment» в кэше
     return f"{base}good/edit?id={mid}"
 
 
 def _with_ms_web_url(row: dict) -> dict:
     d = dict(row)
-    d["ms_web_url"] = ms_online_web_url(str(d.get("ms_type") or ""), str(d.get("ms_id") or ""))
+    d["ms_web_url"] = ms_online_web_url(
+        str(d.get("ms_href") or ""),
+        str(d.get("ms_type") or ""),
+        str(d.get("ms_id") or ""),
+    )
     return d
 
 
@@ -634,7 +647,7 @@ def search_ms_assortment_cache(query: str = "", limit: int = 200) -> list[dict]:
     Поиск по локальному кэшу МС. Несколько слов через пробел — все слова должны
     встречаться (в названии, code, external_code или id), как быстрый фильтр «как в справочнике».
     """
-    lim = max(1, min(int(limit), 1000))
+    lim = max(1, min(int(limit), 100_000))
     raw = (query or "").strip()
     conn = _get_conn()
     if not raw:
