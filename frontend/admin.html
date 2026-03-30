@@ -109,8 +109,12 @@
                 <button type="button" id="btn-feed-refresh" class="wizard-btn wizard-btn--active">1) Обновить фид (Tilda)</button>
                 <button type="button" id="btn-ms-refresh" class="wizard-btn wizard-btn--idle">2) Обновить кэш МС</button>
                 <button type="button" id="btn-feed-load" class="wizard-btn wizard-btn--idle">3) Показать непромапленные</button>
-                <input id="feed-q" placeholder="фильтр по фиду (опционально)" style="min-width:240px;">
+                <input id="feed-q" type="search" autocomplete="off"
+                    title="Фильтр: сузить левый список по названию или key (введи текст и нажми шаг 3)"
+                    placeholder="фильтр списка Tilda: название или key"
+                    style="min-width:260px;">
             </div>
+            <div class="small" style="margin-bottom:10px;color:#64748b;">Поле справа от кнопок — не отдельный «поиск по сайту», а <strong>фильтр строк слева</strong> перед шагом 3: вводишь кусок названия/key → «Показать непромапленные» покажет только подходящие позиции из фида.</div>
 
             <div class="map-grid">
                 <div class="map-step">
@@ -141,6 +145,7 @@
                     <input id="map-ms-id" placeholder="ms id" style="min-width:120px;">
                     <input id="map-ms-href" placeholder="ms href" style="flex:1;min-width:220px;">
                     <button type="button" id="btn-map-save">Сохранить маппинг</button>
+                    <button type="button" id="btn-map-clear" class="secondary">Очистить форму</button>
                 </div>
             </div>
 
@@ -172,6 +177,6 @@
         </div>
     </div>
 </div>
-<script src="/app/static/admin.js?v=7"></script>
+<script src="/app/static/admin.js?v=9"></script>
 </body>
 </html>

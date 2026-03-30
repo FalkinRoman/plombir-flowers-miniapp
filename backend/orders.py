@@ -598,6 +598,28 @@ def replace_ms_assortment_cache(rows: list[dict]):
     conn.close()
 
 
+def ms_online_web_url(ms_type: str, ms_id: str) -> str:
+    """Ссылка на карточку в веб-интерфейсе МойСклада (не API href)."""
+    tid = (ms_type or "").lower().strip()
+    mid = (ms_id or "").strip()
+    if not mid:
+        return ""
+    base = "https://online.moysklad.ru/app/#"
+    if tid == "variant":
+        return f"{base}variant/edit?id={mid}"
+    if tid == "service":
+        return f"{base}service/edit?id={mid}"
+    if tid in ("bundle", "consignment"):
+        return f"{base}good/edit?id={mid}"
+    return f"{base}good/edit?id={mid}"
+
+
+def _with_ms_web_url(row: dict) -> dict:
+    d = dict(row)
+    d["ms_web_url"] = ms_online_web_url(str(d.get("ms_type") or ""), str(d.get("ms_id") or ""))
+    return d
+
+
 def count_ms_assortment_cache_rows() -> int:
     conn = _get_conn()
     try:
@@ -626,7 +648,7 @@ def search_ms_assortment_cache(query: str = "", limit: int = 200) -> list[dict]:
             (lim,),
         ).fetchall()
         conn.close()
-        return [dict(r) for r in rows]
+        return [_with_ms_web_url(dict(r)) for r in rows]
 
     tokens = [t for t in raw.lower().split() if t]
     if not tokens:
@@ -662,9 +684,9 @@ def search_ms_assortment_cache(query: str = "", limit: int = 200) -> list[dict]:
              LIMIT ?
         """
         params.append(lim)
-        rows = conn.execute(sql, tuple(params)).fetchall()
+        rows = conn.execute(sql, tuple(params)        ).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    return [_with_ms_web_url(dict(r)) for r in rows]
 
 
 def _norm_text(s: str) -> str:
@@ -740,7 +762,7 @@ def suggest_ms_assortment_cache(
     scored.sort(key=lambda x: (-x[0], str(x[1].get("name") or "")))
     out: list[dict] = []
     for sc, r in scored[:lim]:
-        d = dict(r)
+        d = _with_ms_web_url(dict(r))
         d["score"] = round(float(sc), 3)
         out.append(d)
     return out

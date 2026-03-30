@@ -283,6 +283,7 @@ def _group_variants(raw_offers: list) -> list:
                 if " - " in variant_label:
                     variant_label = variant_label[variant_label.rindex(" - ") + 3:]
 
+                vu = (v.get("url") or "").strip()
                 variants.append({
                     "id": v["id"],
                     "label": variant_label,
@@ -290,6 +291,7 @@ def _group_variants(raw_offers: list) -> list:
                     "old_price": v["old_price"],
                     "code": v.get("code") or v["id"],
                     "params": v["params"],
+                    "url": vu.split("?")[0] if vu else None,
                 })
 
             # Определяем имя параметра варианта

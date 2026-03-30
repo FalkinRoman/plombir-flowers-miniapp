@@ -853,10 +853,12 @@ async def admin_feed_products(
                     continue
                 if needle and needle not in name.lower() and needle not in key.lower():
                     continue
+                vurl = (v.get("url") or p.get("url") or "").strip()
                 rows.append({
                     "name": name,
                     "tilda_key": key,
                     "base_product_id": p.get("id"),
+                    "tilda_url": vurl or None,
                     "mapped": bool(mapped),
                     "mapping": mapped,
                 })
@@ -874,6 +876,7 @@ async def admin_feed_products(
                 "name": name,
                 "tilda_key": key,
                 "base_product_id": p.get("id"),
+                "tilda_url": (p.get("url") or "").strip() or None,
                 "mapped": bool(mapped),
                 "mapping": mapped,
             })

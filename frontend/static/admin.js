@@ -57,18 +57,24 @@ const EMPTY_MS =
 function renderMsList(rows, opts = {}) {
   const mode = opts.mode || "search";
   const showScore = mode === "suggest";
-  const html = (Array.isArray(rows) ? rows : []).map((r) => `
+  const html = (Array.isArray(rows) ? rows : []).map((r) => {
+    const web = String(r.ms_web_url || "").trim();
+    const hrefHint = esc(r.ms_href || "");
+    const webBlock = web
+      ? `<div class="small"><a href="${esc(web)}" target="_blank" rel="noopener noreferrer" title="API: ${hrefHint}">Открыть в МойСклад ↗</a></div>`
+      : `<div class="small" style="color:#94a3b8">Нет веб-ссылки (пустой ms_id)</div>`;
+    return `
     <div class="item">
       ${showScore ? `<div class="small" style="color:#065f46;font-weight:600;">~${Math.round(Number(r.score || 0) * 100)}% совпадение</div>` : ""}
       <div><strong>${esc(r.name || "")}</strong></div>
       <div class="small mono">code=${esc(r.code || "")} · ext=${esc(r.external_code || "")}</div>
-      <div class="small mono">${esc(r.ms_href || "")}</div>
+      ${webBlock}
       <button type="button" class="secondary btn-pick-ms"
         data-href="${encodeURIComponent(r.ms_href || "")}"
         data-mid="${encodeURIComponent(r.ms_id || "")}"
         data-mname="${encodeURIComponent(r.name || "")}">Выбрать</button>
-    </div>
-  `).join("");
+    </div>`;
+  }).join("");
   $("ms-list").innerHTML = html || EMPTY_MS;
 }
 
@@ -301,18 +307,34 @@ async function refreshFeed() {
   }
 }
 
+function clearMappingForm() {
+  $("map-tilda-key").value = "";
+  $("map-ms-href").value = "";
+  $("map-ms-id").value = "";
+  $("map-ms-name").value = "";
+  $("ms-q").value = "";
+  $("ms-list").innerHTML = '<div class="item small">Форма очищена. Выбери товар слева или введи поиск в МС.</div>';
+  setMsg("map-msg", "Поля связки и поиск МС сброшены.", true);
+}
+
 async function loadFeedProducts() {
   const q = $("feed-q").value.trim();
   const rows = await api(`/admin/feed-products?limit=300&unmapped_only=true&q=${encodeURIComponent(q)}`);
-  $("feed-list").innerHTML = rows.map((r) => `
+  $("feed-list").innerHTML = rows.map((r) => {
+    const tu = String(r.tilda_url || "").trim();
+    const tildaLink = tu
+      ? `<div class="small"><a href="${esc(tu)}" target="_blank" rel="noopener noreferrer">Страница на сайте (Tilda) ↗</a></div>`
+      : `<div class="small" style="color:#94a3b8">В YML нет ссылки на страницу — открой карточку в Tilda вручную (по key)</div>`;
+    return `
     <div class="item">
       <div><strong>${esc(r.name)}</strong></div>
       <div class="small mono">key: ${esc(r.tilda_key)}</div>
+      ${tildaLink}
       <button type="button" class="secondary btn-pick-feed"
         data-k="${encodeURIComponent(String(r.tilda_key))}"
         data-name="${encodeURIComponent(String(r.name || ""))}">Выбрать товар</button>
-    </div>
-  `).join("") || EMPTY_FEED;
+    </div>`;
+  }).join("") || EMPTY_FEED;
   await loadMappingStats();
 }
 
@@ -480,6 +502,7 @@ function bind() {
   });
   $("btn-ms-refresh").addEventListener("click", refreshMsCache);
   $("btn-map-save").addEventListener("click", saveMapping);
+  $("btn-map-clear").addEventListener("click", clearMappingForm);
   $("btn-map-delete").addEventListener("click", deleteMapping);
   $("btn-map-list").addEventListener("click", loadMappings);
   $("btn-broadcast").addEventListener("click", sendBroadcast);
