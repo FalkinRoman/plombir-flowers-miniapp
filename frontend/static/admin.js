@@ -5,6 +5,7 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[m]));
 
 let token = localStorage.getItem(TOKEN_KEY) || "";
+let ordersCache = [];
 
 async function api(path, opts = {}) {
   const headers = { ...(opts.headers || {}) };
@@ -83,14 +84,59 @@ function setupTabs() {
 async function loadOrders() {
   try {
     const rows = await api("/admin/orders?limit=40");
-    $("orders-list").innerHTML = rows.map((o) => `
-      <div class="item">
-        <div><strong>#${o.id}</strong> · ${esc(o.customer_name)} · ${esc(o.status)} · ${Math.round(Number(o.total || 0))} ₽</div>
-        <div class="small mono">${esc(o.customer_phone || "")} · ${esc(o.payment_status || "")} · ${esc(o.created_at || "")}</div>
-      </div>
-    `).join("") || '<div class="item small">Пусто</div>';
+    ordersCache = Array.isArray(rows) ? rows : [];
+    renderOrders();
+    $("order-detail").classList.add("hidden");
+    $("orders-list").classList.remove("hidden");
   } catch (e) {
     $("orders-list").innerHTML = `<div class="item small">Ошибка: ${esc(e.message)}</div>`;
+  }
+}
+
+function renderOrders() {
+  const q = ($("orders-q")?.value || "").trim().toLowerCase();
+  const status = ($("orders-status")?.value || "").trim();
+  const rows = ordersCache.filter((o) => {
+    if (status && String(o.status || "") !== status) return false;
+    if (!q) return true;
+    const hay = [
+      o.id,
+      o.customer_name,
+      o.customer_phone,
+      o.telegram_username,
+      o.telegram_user_id,
+      o.status,
+    ].map((x) => String(x || "").toLowerCase()).join(" ");
+    return hay.includes(q);
+  });
+  $("orders-list").innerHTML = rows.map((o) => `
+    <div class="item">
+      <button class="order-click" onclick="openOrder(${Number(o.id)})">
+        <div><strong>#${o.id}</strong> · ${esc(o.customer_name)} · ${esc(o.status)} · ${Math.round(Number(o.total || 0))} ₽</div>
+        <div class="small mono">${esc(o.customer_phone || "")} · ${esc(o.payment_status || "")} · ${esc(o.created_at || "")}</div>
+      </button>
+    </div>
+  `).join("") || '<div class="item small">Ничего не найдено</div>';
+}
+
+window.openOrder = async function (orderId) {
+  try {
+    const o = await api(`/orders/${orderId}`);
+    $("order-detail-title").textContent = `Заказ #${o.id}`;
+    $("order-detail-content").textContent = JSON.stringify(o, null, 2);
+    $("orders-list").classList.add("hidden");
+    $("order-detail").classList.remove("hidden");
+    history.replaceState(null, "", `#order-${o.id}`);
+  } catch (e) {
+    alert(`Не удалось загрузить заказ: ${e.message}`);
+  }
+};
+
+function closeOrderDetail() {
+  $("order-detail").classList.add("hidden");
+  $("orders-list").classList.remove("hidden");
+  if (location.hash.startsWith("#order-")) {
+    history.replaceState(null, "", "#orders");
   }
 }
 
@@ -206,6 +252,9 @@ function bind() {
   $("btn-login").addEventListener("click", login);
   $("btn-logout").addEventListener("click", logout);
   $("btn-orders-refresh").addEventListener("click", loadOrders);
+  $("orders-q").addEventListener("input", renderOrders);
+  $("orders-status").addEventListener("change", renderOrders);
+  $("btn-order-back").addEventListener("click", closeOrderDetail);
   $("btn-feed-load").addEventListener("click", () => loadFeedProducts().catch((e) => setMsg("map-msg", e.message)));
   $("btn-ms-search").addEventListener("click", () => searchMs().catch((e) => setMsg("map-msg", e.message)));
   $("btn-ms-refresh").addEventListener("click", refreshMsCache);

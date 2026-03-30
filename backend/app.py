@@ -884,6 +884,8 @@ async def admin_broadcast(request: Request, payload: AdminBroadcastRequest):
     sent = 0
     failed = 0
     sample = []
+    admin_test_sent = False
+    admin_test_error = ""
     for row in users:
         chat_id = str(row.get("telegram_user_id") or "").strip()
         if not chat_id:
@@ -898,7 +900,28 @@ async def admin_broadcast(request: Request, payload: AdminBroadcastRequest):
         else:
             failed += 1
     if payload.dry_run:
-        return {"ok": True, "mode": "dry_run", "targets": len(users), "sample_ids": sample}
+        admin_ids = [part.strip() for part in str(ADMIN_CHAT_ID).split(",") if part.strip()]
+        admin_target = admin_ids[0] if admin_ids else ""
+        if admin_target:
+            preview = (
+                "🧪 <b>Тест рассылки (dry-run)</b>\n"
+                "Это предпросмотр для админа. Массовой отправки не было.\n\n"
+                f"{text}"
+            )
+            ok = await _telegram_send_message(admin_target, preview, parse_mode=payload.parse_mode or "HTML")
+            admin_test_sent = bool(ok)
+            if not ok:
+                admin_test_error = "Не удалось отправить тест админу"
+        else:
+            admin_test_error = "ADMIN_CHAT_ID не задан — тест админу пропущен"
+        return {
+            "ok": True,
+            "mode": "dry_run",
+            "targets": len(users),
+            "sample_ids": sample,
+            "admin_test_sent": admin_test_sent,
+            "admin_test_error": admin_test_error,
+        }
     return {"ok": True, "mode": "send", "targets": len(users), "sent": sent, "failed": failed}
 
 
