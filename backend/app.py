@@ -62,6 +62,7 @@ from backend.orders import (
     suggest_ms_assortment_cache,
     count_ms_assortment_cache_rows,
     list_order_telegram_users,
+    ms_product_id_from_assortment_api_row,
 )
 from backend.payments import create_payment, is_yookassa_ready, PaymentConfigError
 from backend.moysklad import create_customerorder, is_moysklad_ready, moysklad_not_ready_reason
@@ -913,7 +914,10 @@ async def admin_refresh_moysklad_cache(request: Request):
     limit = 1000
     async with httpx.AsyncClient(timeout=30.0) as client:
         while True:
-            url = f"https://api.moysklad.ru/api/remap/1.2/entity/assortment?limit={limit}&offset={offset}"
+            url = (
+                f"https://api.moysklad.ru/api/remap/1.2/entity/assortment"
+                f"?limit={limit}&offset={offset}&expand=product"
+            )
             resp = await client.get(url, headers=headers)
             if resp.status_code >= 400:
                 raise HTTPException(status_code=502, detail=f"MoySklad HTTP {resp.status_code}")
@@ -925,6 +929,7 @@ async def admin_refresh_moysklad_cache(request: Request):
                     "ms_id": str((r or {}).get("id") or ""),
                     "ms_href": str(meta.get("href") or ""),
                     "ms_type": _infer_ms_entity_type(meta),
+                    "ms_product_id": ms_product_id_from_assortment_api_row(r or {}),
                     "name": str((r or {}).get("name") or ""),
                     "code": str((r or {}).get("code") or ""),
                     "external_code": str((r or {}).get("externalCode") or ""),

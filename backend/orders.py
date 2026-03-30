@@ -111,6 +111,7 @@ def init_db():
         )
     """)
     _migrate_orders_schema(conn)
+    _migrate_ms_assortment_cache_schema(conn)
     conn.commit()
     conn.close()
 
@@ -142,6 +143,33 @@ def _migrate_orders_schema(conn: sqlite3.Connection):
     for column_name, stmt in migrations:
         if column_name not in existing:
             conn.execute(stmt)
+
+
+def _migrate_ms_assortment_cache_schema(conn: sqlite3.Connection):
+    existing = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(ms_assortment_cache)").fetchall()
+    }
+    if "ms_product_id" not in existing:
+        conn.execute("ALTER TABLE ms_assortment_cache ADD COLUMN ms_product_id TEXT DEFAULT ''")
+
+
+def _uuid_from_moysklad_href(href: str) -> str:
+    """UUID сущности из API href (.../entity/product/<uuid> и т.п.)."""
+    h = (href or "").strip().split("?", 1)[0].rstrip("/")
+    if not h:
+        return ""
+    tail = h.split("/")[-1]
+    return tail if re.match(r"^[a-f0-9-]{36}$", tail, re.I) else ""
+
+
+def ms_product_id_from_assortment_api_row(r: dict) -> str:
+    """У модификации в ответе assortment — ссылка/ id родительского товара."""
+    prod = (r or {}).get("product") or {}
+    pid = str(prod.get("id") or "").strip()
+    if pid:
+        return pid
+    return _uuid_from_moysklad_href(str((prod.get("meta") or {}).get("href") or ""))
 
 
 def create_order(order_data: dict) -> dict:
@@ -580,13 +608,14 @@ def replace_ms_assortment_cache(rows: list[dict]):
         conn.execute(
             """
             INSERT OR REPLACE INTO ms_assortment_cache
-            (ms_id, ms_href, ms_type, name, code, external_code, archived, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (ms_id, ms_href, ms_type, ms_product_id, name, code, external_code, archived, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 (row.get("ms_id") or "").strip(),
                 (row.get("ms_href") or "").strip(),
                 (row.get("ms_type") or "assortment").strip(),
+                (row.get("ms_product_id") or "").strip(),
                 (row.get("name") or "").strip(),
                 (row.get("code") or "").strip(),
                 (row.get("external_code") or "").strip(),
@@ -598,11 +627,12 @@ def replace_ms_assortment_cache(rows: list[dict]):
     conn.close()
 
 
-def ms_online_web_url(ms_href: str, ms_type: str, ms_id: str) -> str:
+def ms_online_web_url(ms_href: str, ms_type: str, ms_id: str, ms_product_id: str = "") -> str:
     """
     Ссылка на карточку в веб-интерфейсе МойСклада (не API href).
-    Важно: модификации (variant) открываются через #variant/edit — id товара в #good/edit
-    даст «не найден», хотя по коду позиция в списке есть.
+    Модификации: в новом UI открывают карточку товара с выбранной модификацией
+    (#good/edit?id=<product>&variantId=<variant>). Старый #variant/edit у части аккаунтов
+    ведёт на дашборд (роутер не матчится).
     """
     mid = (ms_id or "").strip()
     if not mid:
@@ -610,8 +640,11 @@ def ms_online_web_url(ms_href: str, ms_type: str, ms_id: str) -> str:
     base = "https://online.moysklad.ru/app/#"
     href = (ms_href or "").lower()
     tid = (ms_type or "").lower().strip()
+    pid = (ms_product_id or "").strip()
     # Надёжнее всего — сегмент entity/... в API href из кэша
     if "/entity/variant/" in href or tid == "variant":
+        if pid:
+            return f"{base}good/edit?id={pid}&variantId={mid}"
         return f"{base}variant/edit?id={mid}"
     if "/entity/service/" in href or tid == "service":
         return f"{base}service/edit?id={mid}"
@@ -629,6 +662,7 @@ def _with_ms_web_url(row: dict) -> dict:
         str(d.get("ms_href") or ""),
         str(d.get("ms_type") or ""),
         str(d.get("ms_id") or ""),
+        str(d.get("ms_product_id") or ""),
     )
     return d
 
@@ -653,7 +687,8 @@ def search_ms_assortment_cache(query: str = "", limit: int = 200) -> list[dict]:
     if not raw:
         rows = conn.execute(
             """
-            SELECT ms_id, ms_href, ms_type, name, code, external_code, archived, updated_at
+            SELECT ms_id, ms_href, ms_type, coalesce(ms_product_id, '') AS ms_product_id,
+                   name, code, external_code, archived, updated_at
               FROM ms_assortment_cache
              ORDER BY name COLLATE NOCASE ASC
              LIMIT ?
@@ -671,7 +706,8 @@ def search_ms_assortment_cache(query: str = "", limit: int = 200) -> list[dict]:
         q = f"%{tokens[0]}%"
         rows = conn.execute(
             """
-            SELECT ms_id, ms_href, ms_type, name, code, external_code, archived, updated_at
+            SELECT ms_id, ms_href, ms_type, coalesce(ms_product_id, '') AS ms_product_id,
+                   name, code, external_code, archived, updated_at
               FROM ms_assortment_cache
              WHERE lower(name) LIKE ? OR lower(code) LIKE ? OR lower(external_code) LIKE ? OR lower(ms_id) LIKE ?
              ORDER BY name COLLATE NOCASE ASC
@@ -690,14 +726,15 @@ def search_ms_assortment_cache(query: str = "", limit: int = 200) -> list[dict]:
             params.extend([pat, pat, pat, pat])
         where_sql = " AND ".join(parts)
         sql = f"""
-            SELECT ms_id, ms_href, ms_type, name, code, external_code, archived, updated_at
+            SELECT ms_id, ms_href, ms_type, coalesce(ms_product_id, '') AS ms_product_id,
+                   name, code, external_code, archived, updated_at
               FROM ms_assortment_cache
              WHERE {where_sql}
              ORDER BY name COLLATE NOCASE ASC
              LIMIT ?
         """
         params.append(lim)
-        rows = conn.execute(sql, tuple(params)        ).fetchall()
+        rows = conn.execute(sql, tuple(params)).fetchall()
     conn.close()
     return [_with_ms_web_url(dict(r)) for r in rows]
 
@@ -726,7 +763,8 @@ def suggest_ms_assortment_cache(
     conn = _get_conn()
     rows = conn.execute(
         """
-        SELECT ms_id, ms_href, ms_type, name, code, external_code, archived, updated_at
+        SELECT ms_id, ms_href, ms_type, coalesce(ms_product_id, '') AS ms_product_id,
+               name, code, external_code, archived, updated_at
           FROM ms_assortment_cache
         """,
     ).fetchall()
