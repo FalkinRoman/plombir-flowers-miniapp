@@ -152,6 +152,8 @@ def _migrate_ms_assortment_cache_schema(conn: sqlite3.Connection):
     }
     if "ms_product_id" not in existing:
         conn.execute("ALTER TABLE ms_assortment_cache ADD COLUMN ms_product_id TEXT DEFAULT ''")
+    if "ms_uuid_href" not in existing:
+        conn.execute("ALTER TABLE ms_assortment_cache ADD COLUMN ms_uuid_href TEXT DEFAULT ''")
 
 
 def _uuid_from_moysklad_href(href: str) -> str:
@@ -608,14 +610,15 @@ def replace_ms_assortment_cache(rows: list[dict]):
         conn.execute(
             """
             INSERT OR REPLACE INTO ms_assortment_cache
-            (ms_id, ms_href, ms_type, ms_product_id, name, code, external_code, archived, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (ms_id, ms_href, ms_type, ms_product_id, ms_uuid_href, name, code, external_code, archived, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 (row.get("ms_id") or "").strip(),
                 (row.get("ms_href") or "").strip(),
                 (row.get("ms_type") or "assortment").strip(),
                 (row.get("ms_product_id") or "").strip(),
+                (row.get("ms_uuid_href") or "").strip(),
                 (row.get("name") or "").strip(),
                 (row.get("code") or "").strip(),
                 (row.get("external_code") or "").strip(),
@@ -646,7 +649,7 @@ def ms_online_web_url(ms_href: str, ms_type: str, ms_id: str, ms_product_id: str
     Модификация: один только id=variant или только id=product даёт у части аккаунтов
     «товар не найден» — веб ожидает пару родитель + модификация в query.
     При наличии ms_product_id (expand=product в кэше): id=<product>&variantId=<variant>.
-    Параметр id= в URL должен совпадать с id в API / последним сегментом meta.href, не с meta.uuidHref.
+    Если в кэше есть meta.uuidHref — для «В МС» используется он (_with_ms_web_url), этот helper — запасной вариант.
     """
     mid = _ms_id_aligned_with_href(ms_href, ms_id)
     if not mid:
@@ -672,12 +675,16 @@ def ms_online_web_url(ms_href: str, ms_type: str, ms_id: str, ms_product_id: str
 
 def _with_ms_web_url(row: dict) -> dict:
     d = dict(row)
-    d["ms_web_url"] = ms_online_web_url(
-        str(d.get("ms_href") or ""),
-        str(d.get("ms_type") or ""),
-        str(d.get("ms_id") or ""),
-        str(d.get("ms_product_id") or ""),
-    )
+    u = str(d.get("ms_uuid_href") or "").strip()
+    if u.startswith("http://") or u.startswith("https://"):
+        d["ms_web_url"] = u
+    else:
+        d["ms_web_url"] = ms_online_web_url(
+            str(d.get("ms_href") or ""),
+            str(d.get("ms_type") or ""),
+            str(d.get("ms_id") or ""),
+            str(d.get("ms_product_id") or ""),
+        )
     return d
 
 
@@ -702,6 +709,7 @@ def search_ms_assortment_cache(query: str = "", limit: int = 200) -> list[dict]:
         rows = conn.execute(
             """
             SELECT ms_id, ms_href, ms_type, coalesce(ms_product_id, '') AS ms_product_id,
+                   coalesce(ms_uuid_href, '') AS ms_uuid_href,
                    name, code, external_code, archived, updated_at
               FROM ms_assortment_cache
              ORDER BY name COLLATE NOCASE ASC
@@ -721,6 +729,7 @@ def search_ms_assortment_cache(query: str = "", limit: int = 200) -> list[dict]:
         rows = conn.execute(
             """
             SELECT ms_id, ms_href, ms_type, coalesce(ms_product_id, '') AS ms_product_id,
+                   coalesce(ms_uuid_href, '') AS ms_uuid_href,
                    name, code, external_code, archived, updated_at
               FROM ms_assortment_cache
              WHERE lower(name) LIKE ? OR lower(code) LIKE ? OR lower(external_code) LIKE ? OR lower(ms_id) LIKE ?
@@ -744,6 +753,7 @@ def search_ms_assortment_cache(query: str = "", limit: int = 200) -> list[dict]:
         where_sql = " AND ".join(parts)
         sql = f"""
             SELECT ms_id, ms_href, ms_type, coalesce(ms_product_id, '') AS ms_product_id,
+                   coalesce(ms_uuid_href, '') AS ms_uuid_href,
                    name, code, external_code, archived, updated_at
               FROM ms_assortment_cache
              WHERE {where_sql}
@@ -781,6 +791,7 @@ def suggest_ms_assortment_cache(
     rows = conn.execute(
         """
         SELECT ms_id, ms_href, ms_type, coalesce(ms_product_id, '') AS ms_product_id,
+               coalesce(ms_uuid_href, '') AS ms_uuid_href,
                name, code, external_code, archived, updated_at
           FROM ms_assortment_cache
         """,

@@ -146,12 +146,12 @@
             </div>
 
             <details style="margin-top:10px;" class="small">
-                <summary style="cursor:pointer;font-weight:600;">Про uuidHref в JSON МС и ссылку «В МС»</summary>
+                <summary style="cursor:pointer;font-weight:600;">Про ссылку «В МС» и поля связки</summary>
                 <div style="margin-top:8px;line-height:1.45;color:#374151;">
-                    В ответе API у сущности есть <code>id</code>, <code>meta.href</code> и иногда <code>meta.uuidHref</code>.
-                    Для заказов и для параметра <code>id=</code> в браузере нужны одни и те же UUID — из <code>id</code> или с конца <code>meta.href</code> (например <code>…/entity/product/46b3c377-…</code>).
-                    Поле <code>uuidHref</code> у МойСклада бывает с <strong>другим</strong> UUID — его не используем для маппинга и не сравниваем с колонкой «В МС».
-                    Достаточно <code>MOYSKLAD_TOKEN</code> на сервере: после «Обновить кэш МС» кэш и кнопка «Выбрать» подставляют правильные <code>href</code> и id автоматически, отдельный логин в JSON в админке не нужен.
+                    Ссылка <strong>«В МС ↗»</strong> в правой колонке: если в API пришло <code>meta.uuidHref</code>, открываем его (как в JSON МойСклада) — так веб чаще ведёт на нужную карточку.
+                    Если <code>uuidHref</code> нет — строим URL из <code>meta.href</code> / <code>id</code>.
+                    В поля связки по-прежнему идут <code>ms href</code> и id с конца <strong>Remap API</strong> (<code>meta.href</code>), не uuidHref — заказы в МС создаются по API-ссылке.
+                    Достаточно <code>MOYSKLAD_TOKEN</code> на сервере; после «Обновить кэш МС» подтянется <code>uuidHref</code> в кэш.
                 </div>
             </details>
 
@@ -183,6 +183,6 @@
         </div>
     </div>
 </div>
-<script src="/app/static/admin.js?v=14"></script>
+<script src="/app/static/admin.js?v=15"></script>
 </body>
 </html>

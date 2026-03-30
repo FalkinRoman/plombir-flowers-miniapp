@@ -69,7 +69,7 @@ function renderMsList(rows, opts = {}) {
   const mode = opts.mode || "search";
   const showScore = mode === "suggest";
   const webTitle =
-    "Ссылка из id/API (как в meta.href). В ответе МС meta.uuidHref иногда другой UUID — для карточки берите id, не uuidHref.";
+    "Если в кэше есть meta.uuidHref от МС — открываем его; иначе URL из id/API. В инпуты связки по-прежнему идёт API meta.href.";
   const html = (Array.isArray(rows) ? rows : []).map((r) => {
     const web = String(r.ms_web_url || "").trim();
     const hrefHint = esc(r.ms_href || "");

@@ -949,6 +949,7 @@ async def admin_refresh_moysklad_cache(request: Request):
                     "ms_href": api_href,
                     "ms_type": _infer_ms_entity_type(meta),
                     "ms_product_id": ms_product_id_from_assortment_api_row(r or {}),
+                    "ms_uuid_href": str(meta.get("uuidHref") or "").strip(),
                     "name": str((r or {}).get("name") or ""),
                     "code": str((r or {}).get("code") or ""),
                     "external_code": str((r or {}).get("externalCode") or ""),
