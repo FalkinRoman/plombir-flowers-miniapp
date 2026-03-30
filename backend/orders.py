@@ -673,6 +673,24 @@ def ms_online_web_url(ms_href: str, ms_type: str, ms_id: str, ms_product_id: str
     return f"{base}good/edit?id={mid}"
 
 
+def ms_web_display_url_for_mapping(ms_href: str, ms_type: str, ms_id: str) -> str:
+    """Веб-ссылка для таблицы маппингов: uuidHref из кэша МС, если есть, иначе сборка из href/id."""
+    mid = (ms_id or "").strip()
+    if mid:
+        conn = _get_conn()
+        try:
+            r = conn.execute(
+                "SELECT coalesce(ms_uuid_href, '') FROM ms_assortment_cache WHERE ms_id = ? LIMIT 1",
+                (mid,),
+            ).fetchone()
+        finally:
+            conn.close()
+        u = str((r or (None,))[0] or "").strip()
+        if u.startswith("http://") or u.startswith("https://"):
+            return u
+    return ms_online_web_url(ms_href, ms_type, ms_id, "")
+
+
 def _with_ms_web_url(row: dict) -> dict:
     d = dict(row)
     u = str(d.get("ms_uuid_href") or "").strip()

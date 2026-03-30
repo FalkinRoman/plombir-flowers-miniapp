@@ -57,6 +57,7 @@ from backend.orders import (
     list_product_mappings,
     upsert_product_mapping,
     delete_product_mapping,
+    ms_web_display_url_for_mapping,
     replace_ms_assortment_cache,
     search_ms_assortment_cache,
     suggest_ms_assortment_cache,
@@ -69,6 +70,25 @@ from backend.moysklad import create_customerorder, is_moysklad_ready, moysklad_n
 from backend.ui_content import ensure_ui_storage, get_ui_content
 
 log = logging.getLogger("plombir")
+
+
+def _tilda_url_for_feed_key(tilda_key: str) -> str:
+    """URL карточки на сайте (Tilda) по key из текущего фида в памяти."""
+    tk = (tilda_key or "").strip()
+    if not tk:
+        return ""
+    for p in _cache.get("products") or []:
+        variants = p.get("variants") or []
+        if variants:
+            for v in variants:
+                key = str(v.get("code") or v.get("id") or "").strip()
+                if key == tk:
+                    return (str(v.get("url") or "").strip() or str(p.get("url") or "").strip())
+        else:
+            key = str(p.get("code") or p.get("id") or "").strip()
+            if key == tk:
+                return str(p.get("url") or "").strip()
+    return ""
 
 
 def _tg_html_escape(s: object) -> str:
@@ -778,7 +798,15 @@ async def admin_auth_me(request: Request):
 @app.get("/api/admin/mappings")
 async def admin_mappings_list(request: Request, limit: int = 300, q: str = ""):
     _require_admin(request)
-    return list_product_mappings(limit=limit, search=q)
+    rows = list_product_mappings(limit=limit, search=q)
+    for m in rows:
+        m["tilda_url"] = _tilda_url_for_feed_key(str(m.get("tilda_key") or ""))
+        m["ms_web_url"] = ms_web_display_url_for_mapping(
+            str(m.get("ms_href") or ""),
+            str(m.get("ms_type") or ""),
+            str(m.get("ms_id") or ""),
+        )
+    return rows
 
 
 @app.post("/api/admin/mappings")

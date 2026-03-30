@@ -3,6 +3,33 @@ const TOKEN_KEY = "plombir_admin_token";
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[m]));
+
+function toast(msg, ok = true) {
+  const stack = $("toast-stack");
+  if (!stack) return;
+  const el = document.createElement("div");
+  el.className = `toast ${ok ? "toast--ok" : "toast--err"}`;
+  el.textContent = msg;
+  stack.appendChild(el);
+  setTimeout(() => {
+    el.style.opacity = "0";
+    el.style.transition = "opacity 0.28s ease";
+    setTimeout(() => el.remove(), 280);
+  }, 4000);
+}
+
+function setFeedWrapLoading(on) {
+  const w = $("feed-list-wrap");
+  if (w) w.classList.toggle("is-loading", !!on);
+}
+function setMsWrapLoading(on) {
+  const w = $("ms-list-wrap");
+  if (w) w.classList.toggle("is-loading", !!on);
+}
+function setBothWrapLoading(on) {
+  setFeedWrapLoading(on);
+  setMsWrapLoading(on);
+}
 const STATUS_PAYMENT_MAP = {
   pending: "Ожидает оплаты",
   succeeded: "Оплачен",
@@ -163,7 +190,10 @@ function setupTabs() {
       ["orders", "mapping", "broadcast"].forEach((name) => {
         $(`tab-${name}`).classList.toggle("hidden", name !== tab);
       });
-      if (tab === "mapping") loadMappingStats().catch(() => {});
+      if (tab === "mapping") {
+        loadMappingStats().catch(() => {});
+        loadMappings().catch(() => {});
+      }
     });
   });
 }
@@ -305,14 +335,19 @@ async function loadMappingStats() {
 
 async function refreshFeed() {
   setMsg("map-msg", "Качаю YML и обновляю фид…");
+  setBothWrapLoading(true);
   try {
     const data = await api("/admin/feed/refresh", { method: "POST" });
     mapWizardPhase = 2;
     updateMapWizardUI();
     setMsg("map-msg", `Фид: ${data.products_count} товаров · дальше кэш МС`, true);
-    await loadFeedProducts();
+    await loadFeedProducts({ skipFeedLoading: true });
+    toast(`Фид обновлён: ${data.products_count} товаров`, true);
   } catch (e) {
     setMsg("map-msg", `Ошибка: ${e.message}`);
+    toast(`Фид: ${e.message}`, false);
+  } finally {
+    setBothWrapLoading(false);
   }
 }
 
@@ -323,10 +358,24 @@ function clearMappingForm() {
   $("map-ms-name").value = "";
   $("ms-q").value = "";
   $("ms-list").innerHTML = '<div class="item small">Сброс. Выбери слева или найди в МС.</div>';
+  selectedFeedItem = null;
   setMsg("map-msg", "Сброшено.", true);
 }
 
-async function loadFeedProducts() {
+function resetMappingUiAfterSave() {
+  $("map-tilda-key").value = "";
+  $("map-ms-href").value = "";
+  $("map-ms-id").value = "";
+  $("map-ms-name").value = "";
+  $("ms-list").innerHTML =
+    '<div class="item small">Связка сохранена — эта позиция убрана из списка слева. Выбери следующую или поиск справа.</div>';
+  selectedFeedItem = null;
+}
+
+async function loadFeedProducts(opts = {}) {
+  const skipFeedLoading = !!opts.skipFeedLoading;
+  if (!skipFeedLoading) setFeedWrapLoading(true);
+  try {
   const q = $("feed-q").value.trim();
   const rows = await api(`/admin/feed-products?limit=100000&unmapped_only=true&q=${encodeURIComponent(q)}`);
   $("feed-list").innerHTML = rows.map((r) => {
@@ -345,10 +394,15 @@ async function loadFeedProducts() {
     </div>`;
   }).join("") || EMPTY_FEED;
   await loadMappingStats();
+  } finally {
+    if (!skipFeedLoading) setFeedWrapLoading(false);
+  }
 }
 
 /** Автоподбор топ-N из кэша МС по названию фида + key (серверный скоринг). */
 async function suggestMsForFeed(feedName, tildaKey) {
+  setMsWrapLoading(true);
+  try {
   const params = new URLSearchParams({
     feed_name: feedName || "",
     tilda_key: tildaKey || "",
@@ -358,14 +412,20 @@ async function suggestMsForFeed(feedName, tildaKey) {
   renderMsList(rows, { mode: "suggest" });
   if (!rows.length) {
     $("ms-q").value = (feedName || "").replace(/\s*-\s*.*$/, "").trim() || tildaKey;
-    await searchMs();
+    await searchMs({ skipMsLoading: true });
     setMsg("map-msg", "Нет авто-совпадений — смотри поиск справа.", false);
     return;
   }
   setMsg("map-msg", `${rows.length} кандидатов · «Выбрать» → «Сохранить»`, true);
+  } finally {
+    setMsWrapLoading(false);
+  }
 }
 
-async function searchMs() {
+async function searchMs(opts = {}) {
+  const skipMsLoading = !!opts.skipMsLoading;
+  if (!skipMsLoading) setMsWrapLoading(true);
+  try {
   const q = $("ms-q").value.trim();
   const rows = await api(`/admin/moysklad/cache/search?q=${encodeURIComponent(q)}&limit=50000`);
   let finalRows = rows;
@@ -377,18 +437,26 @@ async function searchMs() {
   renderMsList(finalRows, { mode: "search" });
   if (note) setMsg("map-msg", note);
   else setMsg("map-msg", `${finalRows.length} в кэше`, true);
+  } finally {
+    if (!skipMsLoading) setMsWrapLoading(false);
+  }
 }
 
 async function refreshMsCache() {
   setMsg("map-msg", "Обновляю кэш МС...");
+  setBothWrapLoading(true);
   try {
     const data = await api("/admin/moysklad/cache/refresh", { method: "POST" });
     mapWizardPhase = 3;
     updateMapWizardUI();
     setMsg("map-msg", `Кэш МС: ${data.count} поз. · слева «Показать»`, true);
     await loadMappingStats();
+    toast(`Кэш МС обновлён: ${data.count} позиций`, true);
   } catch (e) {
     setMsg("map-msg", `Ошибка: ${e.message}`);
+    toast(`Кэш МС: ${e.message}`, false);
+  } finally {
+    setBothWrapLoading(false);
   }
 }
 
@@ -403,43 +471,96 @@ async function saveMapping() {
     ms_type: inferMsTypeFromHref(href),
     note: "admin-ui",
   };
-  if (!payload.tilda_key || !payload.ms_href) return setMsg("map-msg", "Нужны tilda key и ms href");
+  if (!payload.tilda_key || !payload.ms_href) {
+    toast("Нужны tilda key и ms href", false);
+    return setMsg("map-msg", "Нужны tilda key и ms href");
+  }
   try {
     await api("/admin/mappings", { method: "POST", body: JSON.stringify(payload) });
     if (payload.ms_id) $("map-ms-id").value = payload.ms_id;
-    setMsg("map-msg", "Сохранено", true);
+    toast("Связка сохранена", true);
+    setMsg("map-msg", "Сохранено — списки обновлены", true);
+    resetMappingUiAfterSave();
     await loadMappings();
     await loadFeedProducts();
+    await loadMappingStats();
   } catch (e) {
+    toast(`Не сохранено: ${e.message}`, false);
+    setMsg("map-msg", `Ошибка: ${e.message}`);
+  }
+}
+
+async function deleteMappingByKey(key) {
+  const k = String(key || "").trim();
+  if (!k) return;
+  try {
+    await api(`/admin/mappings/${encodeURIComponent(k)}`, { method: "DELETE" });
+    toast("Маппинг удалён", true);
+    setMsg("map-msg", "Удалено — таблица и списки обновлены", true);
+    await loadMappings();
+    await loadFeedProducts();
+    await loadMappingStats();
+  } catch (e) {
+    toast(`Удаление: ${e.message}`, false);
     setMsg("map-msg", `Ошибка: ${e.message}`);
   }
 }
 
 async function deleteMapping() {
   const key = $("map-delete-key").value.trim();
-  if (!key) return setMsg("map-msg", "Введите tilda key");
-  try {
-    await api(`/admin/mappings/${encodeURIComponent(key)}`, { method: "DELETE" });
-    setMsg("map-msg", "Маппинг удалён", true);
-    await loadMappings();
-    await loadMappingStats();
-  } catch (e) {
-    setMsg("map-msg", `Ошибка: ${e.message}`);
+  if (!key) {
+    toast("Введите tilda key", false);
+    return setMsg("map-msg", "Введите tilda key");
   }
+  await deleteMappingByKey(key);
+  $("map-delete-key").value = "";
+}
+
+function renderMappingTable(rows) {
+  const tb = $("mapping-tbody");
+  if (!tb) return;
+  if (!Array.isArray(rows) || !rows.length) {
+    tb.innerHTML = '<tr><td colspan="8" class="small" style="color:#64748b;">Нет записей</td></tr>';
+    return;
+  }
+  tb.innerHTML = rows
+    .map((r) => {
+      const tid = esc(String(r.tilda_key || ""));
+      const keyRaw = String(r.tilda_key || "");
+      const turl = String(r.tilda_url || "").trim();
+      const tildaCell = turl
+        ? `<a href="${esc(turl)}" target="_blank" rel="noopener noreferrer">На сайте ↗</a>`
+        : `<span class="small" style="color:#94a3b8;">—</span>`;
+      const msWeb = String(r.ms_web_url || "").trim();
+      const msWebCell = msWeb
+        ? `<a href="${esc(msWeb)}" target="_blank" rel="noopener noreferrer">В МС ↗</a>`
+        : `<span class="small" style="color:#94a3b8;">—</span>`;
+      const href = esc(String(r.ms_href || ""));
+      return `
+      <tr>
+        <td class="mono">${esc(r.id ?? "")}</td>
+        <td class="mono">${tid}</td>
+        <td>${tildaCell}</td>
+        <td>${esc(r.ms_name || r.ms_id || "—")}</td>
+        <td>${msWebCell}</td>
+        <td class="mono">${href}</td>
+        <td class="small">${esc(r.updated_at || "")}<div style="color:#64748b;">${esc(r.updated_by || "")}</div></td>
+        <td class="cell-actions">
+          <button type="button" class="secondary btn-table btn-del-mapping" data-key="${encodeURIComponent(keyRaw)}">Удалить</button>
+        </td>
+      </tr>`;
+    })
+    .join("");
 }
 
 async function loadMappings() {
+  const tb = $("mapping-tbody");
   try {
-    const rows = await api("/admin/mappings?limit=500");
-    $("mapping-list").innerHTML = rows.map((r) => `
-      <div class="item">
-        <div><strong>${esc(r.tilda_key)}</strong> → ${esc(r.ms_name || r.ms_id || "")}</div>
-        <div class="small mono">${esc(r.ms_href || "")}</div>
-        <div class="small">updated: ${esc(r.updated_at || "")} · by: ${esc(r.updated_by || "")}</div>
-      </div>
-    `).join("") || '<div class="item small">Пока пусто</div>';
+    const rows = await api("/admin/mappings?limit=10000");
+    renderMappingTable(rows);
   } catch (e) {
-    $("mapping-list").innerHTML = `<div class="item small">Ошибка: ${esc(e.message)}</div>`;
+    if (tb) tb.innerHTML = `<tr><td colspan="8" class="small" style="color:#b91c1c;">Ошибка: ${esc(e.message)}</td></tr>`;
+    toast(`Список маппингов: ${e.message}`, false);
   }
 }
 
@@ -486,6 +607,16 @@ function bindMappingClicks() {
     $("map-ms-name").value = decodeURIComponent(btn.dataset.mname || "");
     setMsg("map-msg", "Подставлено из кэша (id = конец API-ссылки, как в заказах). «Сохранить»", true);
   });
+  const mtb = $("mapping-tbody");
+  if (mtb) {
+    mtb.addEventListener("click", (ev) => {
+      const btn = ev.target.closest(".btn-del-mapping");
+      if (!btn || btn.dataset.key == null) return;
+      const key = decodeURIComponent(btn.dataset.key);
+      if (!key) return;
+      deleteMappingByKey(key);
+    });
+  }
 }
 
 function bind() {
