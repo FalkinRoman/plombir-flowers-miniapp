@@ -598,11 +598,24 @@ def replace_ms_assortment_cache(rows: list[dict]):
     conn.close()
 
 
-def search_ms_assortment_cache(query: str = "", limit: int = 200) -> list[dict]:
-    lim = max(1, min(int(limit), 1000))
-    q = f"%{(query or '').strip().lower()}%"
+def count_ms_assortment_cache_rows() -> int:
     conn = _get_conn()
-    if q == "%%":
+    try:
+        n = conn.execute("SELECT COUNT(*) FROM ms_assortment_cache").fetchone()[0]
+        return int(n or 0)
+    finally:
+        conn.close()
+
+
+def search_ms_assortment_cache(query: str = "", limit: int = 200) -> list[dict]:
+    """
+    Поиск по локальному кэшу МС. Несколько слов через пробел — все слова должны
+    встречаться (в названии, code, external_code или id), как быстрый фильтр «как в справочнике».
+    """
+    lim = max(1, min(int(limit), 1000))
+    raw = (query or "").strip()
+    conn = _get_conn()
+    if not raw:
         rows = conn.execute(
             """
             SELECT ms_id, ms_href, ms_type, name, code, external_code, archived, updated_at
@@ -612,7 +625,15 @@ def search_ms_assortment_cache(query: str = "", limit: int = 200) -> list[dict]:
             """,
             (lim,),
         ).fetchall()
-    else:
+        conn.close()
+        return [dict(r) for r in rows]
+
+    tokens = [t for t in raw.lower().split() if t]
+    if not tokens:
+        conn.close()
+        return search_ms_assortment_cache(query="", limit=lim)
+    if len(tokens) == 1:
+        q = f"%{tokens[0]}%"
         rows = conn.execute(
             """
             SELECT ms_id, ms_href, ms_type, name, code, external_code, archived, updated_at
@@ -623,6 +644,25 @@ def search_ms_assortment_cache(query: str = "", limit: int = 200) -> list[dict]:
             """,
             (q, q, q, q, lim),
         ).fetchall()
+    else:
+        parts: list[str] = []
+        params: list = []
+        for t in tokens:
+            pat = f"%{t}%"
+            parts.append(
+                "(lower(name) LIKE ? OR lower(code) LIKE ? OR lower(external_code) LIKE ? OR lower(ms_id) LIKE ?)"
+            )
+            params.extend([pat, pat, pat, pat])
+        where_sql = " AND ".join(parts)
+        sql = f"""
+            SELECT ms_id, ms_href, ms_type, name, code, external_code, archived, updated_at
+              FROM ms_assortment_cache
+             WHERE {where_sql}
+             ORDER BY name COLLATE NOCASE ASC
+             LIMIT ?
+        """
+        params.append(lim)
+        rows = conn.execute(sql, tuple(params)).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 

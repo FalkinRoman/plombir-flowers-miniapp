@@ -22,6 +22,35 @@ let token = localStorage.getItem(TOKEN_KEY) || "";
 let ordersCache = [];
 let selectedFeedItem = null;
 
+/** Визард: 1 — фид Tilda, 2 — кэш МС, 3 — список непромапленных, 4 — можно маппить */
+let mapWizardPhase = 1;
+
+function updateMapWizardUI() {
+  const b1 = $("btn-feed-refresh");
+  const b2 = $("btn-ms-refresh");
+  const b3 = $("btn-feed-load");
+  if (!b1 || !b2 || !b3) return;
+  [b1, b2, b3].forEach((b) => b.classList.remove("wizard-btn--active", "wizard-btn--done", "wizard-btn--idle"));
+  const ph = mapWizardPhase;
+  if (ph <= 1) {
+    b1.classList.add("wizard-btn--active");
+    b2.classList.add("wizard-btn--idle");
+    b3.classList.add("wizard-btn--idle");
+  } else if (ph === 2) {
+    b1.classList.add("wizard-btn--done");
+    b2.classList.add("wizard-btn--active");
+    b3.classList.add("wizard-btn--idle");
+  } else if (ph === 3) {
+    b1.classList.add("wizard-btn--done");
+    b2.classList.add("wizard-btn--done");
+    b3.classList.add("wizard-btn--active");
+  } else {
+    b1.classList.add("wizard-btn--done");
+    b2.classList.add("wizard-btn--done");
+    b3.classList.add("wizard-btn--done");
+  }
+}
+
 const EMPTY_MS =
   '<div class="item small">Нет строк в локальном кэше. Сначала «Обновить кэш МС», затем снова выбери товар или «Искать».</div>';
 
@@ -76,7 +105,7 @@ async function checkMe() {
   try {
     const me = await api("/admin/auth/me");
     showAuthed(me.user);
-    await Promise.all([loadOrders(), loadMappings()]);
+    await Promise.all([loadOrders(), loadMappings(), loadMappingStats()]);
   } catch (_) {
     token = "";
     localStorage.removeItem(TOKEN_KEY);
@@ -115,6 +144,7 @@ function setupTabs() {
       ["orders", "mapping", "broadcast"].forEach((name) => {
         $(`tab-${name}`).classList.toggle("hidden", name !== tab);
       });
+      if (tab === "mapping") loadMappingStats().catch(() => {});
     });
   });
 }
@@ -237,13 +267,32 @@ function closeOrderDetail() {
 const EMPTY_FEED =
   '<div class="item small">Нет строк: либо всё уже промаплено, либо нет совпадений по поиску. Попробуйте «Обновить фид» или снимите фильтр (пока только непромапленные).</div>';
 
+async function loadMappingStats() {
+  const el = $("map-stats");
+  if (!el) return;
+  try {
+    const s = await api("/admin/mapping-stats");
+    const extra =
+      s.mappings_db_rows != null && Number(s.mappings_db_rows) !== Number(s.mapped_count)
+        ? ` · записей в таблице маппинга: ${s.mappings_db_rows}`
+        : "";
+    el.textContent = `В фиде позиций (варианты): ${s.feed_variants_total} · Промаплено: ${s.mapped_count} · Осталось: ${s.unmapped_count} · Строк в кэше МС: ${s.ms_cache_rows}${extra}`;
+    el.style.color = "#374151";
+  } catch (e) {
+    el.textContent = `Счётчики: ${e.message}`;
+    el.style.color = "#b91c1c";
+  }
+}
+
 async function refreshFeed() {
   setMsg("map-msg", "Качаю YML и обновляю фид…");
   try {
     const data = await api("/admin/feed/refresh", { method: "POST" });
+    mapWizardPhase = 2;
+    updateMapWizardUI();
     setMsg(
       "map-msg",
-      `Фид обновлён: ${data.products_count} товаров, ${data.categories_count} категорий${data.last_update ? ` · ${data.last_update}` : ""}`,
+      `Фид обновлён: ${data.products_count} товаров, ${data.categories_count} категорий${data.last_update ? ` · ${data.last_update}` : ""}. Дальше — шаг 2 (кэш МС).`,
       true,
     );
     await loadFeedProducts();
@@ -264,6 +313,7 @@ async function loadFeedProducts() {
         data-name="${encodeURIComponent(String(r.name || ""))}">Выбрать товар</button>
     </div>
   `).join("") || EMPTY_FEED;
+  await loadMappingStats();
 }
 
 /** Автоподбор топ-N из кэша МС по названию фида + key (серверный скоринг). */
@@ -296,18 +346,21 @@ async function searchMs() {
   let note = "";
   if (q && (!Array.isArray(rows) || rows.length === 0)) {
     finalRows = await api("/admin/moysklad/cache/search?q=&limit=200");
-    note = `По запросу «${q}» нет совпадений. Показаны первые ${finalRows.length} позиций из кэша МС.`;
+    note = `По запросу «${q}» нет совпадений (несколько слов — все должны встретиться). Показаны первые ${finalRows.length} позиций из кэша.`;
   }
   renderMsList(finalRows, { mode: "search" });
   if (note) setMsg("map-msg", note);
-  else setMsg("map-msg", `Найдено позиций в МС: ${finalRows.length}`, true);
+  else setMsg("map-msg", `Найдено в кэше МС: ${finalRows.length}${q ? "" : " (пустой поиск — первые 200)"}`, true);
 }
 
 async function refreshMsCache() {
   setMsg("map-msg", "Обновляю кэш МС...");
   try {
     const data = await api("/admin/moysklad/cache/refresh", { method: "POST" });
-    setMsg("map-msg", `Кэш обновлён: ${data.count} позиций`, true);
+    mapWizardPhase = 3;
+    updateMapWizardUI();
+    setMsg("map-msg", `Кэш обновлён: ${data.count} позиций. Дальше — шаг 3 (список непромапленных).`, true);
+    await loadMappingStats();
   } catch (e) {
     setMsg("map-msg", `Ошибка: ${e.message}`);
   }
@@ -340,6 +393,7 @@ async function deleteMapping() {
     await api(`/admin/mappings/${encodeURIComponent(key)}`, { method: "DELETE" });
     setMsg("map-msg", "Маппинг удалён", true);
     await loadMappings();
+    await loadMappingStats();
   } catch (e) {
     setMsg("map-msg", `Ошибка: ${e.message}`);
   }
@@ -409,9 +463,21 @@ function bind() {
   $("orders-q").addEventListener("input", renderOrders);
   $("orders-status").addEventListener("change", renderOrders);
   $("btn-order-back").addEventListener("click", closeOrderDetail);
-  $("btn-feed-load").addEventListener("click", () => loadFeedProducts().catch((e) => setMsg("map-msg", e.message)));
+  $("btn-feed-load").addEventListener("click", () =>
+    loadFeedProducts()
+      .then(() => {
+        mapWizardPhase = 4;
+        updateMapWizardUI();
+      })
+      .catch((e) => setMsg("map-msg", e.message)),
+  );
   $("btn-feed-refresh").addEventListener("click", () => refreshFeed().catch((e) => setMsg("map-msg", e.message)));
   $("btn-ms-search").addEventListener("click", () => searchMs().catch((e) => setMsg("map-msg", e.message)));
+  let msSearchTimer = null;
+  $("ms-q").addEventListener("input", () => {
+    clearTimeout(msSearchTimer);
+    msSearchTimer = setTimeout(() => searchMs().catch((e) => setMsg("map-msg", e.message)), 380);
+  });
   $("btn-ms-refresh").addEventListener("click", refreshMsCache);
   $("btn-map-save").addEventListener("click", saveMapping);
   $("btn-map-delete").addEventListener("click", deleteMapping);
@@ -419,6 +485,7 @@ function bind() {
   $("btn-broadcast").addEventListener("click", sendBroadcast);
   bindMappingClicks();
   setupTabs();
+  updateMapWizardUI();
 }
 
 bind();

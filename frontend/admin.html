@@ -36,6 +36,15 @@
         #order-detail-content { word-break: break-word; font-size: 13px; line-height: 1.35; }
         .broadcast-controls { margin-top: 14px; align-items: center; }
         .broadcast-help { margin-top: 10px; line-height: 1.35; }
+        .wizard-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; margin-bottom: 6px; }
+        .wizard-btn { min-height: 40px; }
+        .wizard-btn.wizard-btn--active { background: #111; color: #fff; border-color: #111; }
+        .wizard-btn.wizard-btn--done { background: #ecfdf5; color: #065f46; border-color: #6ee7b7; }
+        .wizard-btn.wizard-btn--idle { background: #fff; color: #6b7280; border-color: #d1d5db; }
+        .map-col-title { font-size: 13px; font-weight: 600; margin: 0 0 6px; color: #111; }
+        .map-col-sub { font-size: 11px; color: #6b7280; margin: -4px 0 8px; line-height: 1.35; }
+        .map-bot-box { border: 1px dashed #cbd5e1; border-radius: 10px; padding: 10px 12px; background: #fafafa; margin-top: 10px; }
+        .map-bot-box .map-col-sub { margin: 0 0 8px; }
         @media (max-width: 900px) { .grid2, .map-grid { grid-template-columns: 1fr; } .map-list { max-height: 38vh; } }
     </style>
 </head>
@@ -94,36 +103,44 @@
 
         <div id="tab-mapping" class="card hidden">
             <h3 style="margin-top:0;">Маппинг товаров</h3>
-            <div class="row" style="margin-bottom:10px;">
-                <button id="btn-feed-refresh" class="secondary">1) Обновить фид</button>
-                <button id="btn-ms-refresh">2) Обновить кэш МС</button>
-                <button id="btn-feed-load" class="secondary">3) Показать непромапленные</button>
+            <div id="map-stats" class="small" style="margin-bottom:8px;padding:8px 10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">Загрузка счётчиков…</div>
+            <div class="small" style="margin-bottom:8px;">Идите по кнопкам сверху по порядку: подсвечивается <strong>текущий шаг</strong> (чёрная кнопка), выполненные — зелёные.</div>
+            <div class="wizard-bar" id="map-wizard-bar">
+                <button type="button" id="btn-feed-refresh" class="wizard-btn wizard-btn--active">1) Обновить фид (Tilda)</button>
+                <button type="button" id="btn-ms-refresh" class="wizard-btn wizard-btn--idle">2) Обновить кэш МС</button>
+                <button type="button" id="btn-feed-load" class="wizard-btn wizard-btn--idle">3) Показать непромапленные</button>
                 <input id="feed-q" placeholder="фильтр по фиду (опционально)" style="min-width:240px;">
             </div>
 
             <div class="map-grid">
                 <div class="map-step">
-                    <h4>Шаг 1: выбери товар из фида</h4>
-                    <div id="feed-list" class="map-list"><div class="item small">Нажми «Показать непромапленные». Затем выбери нужный товар.</div></div>
+                    <div class="map-col-title">Tilda — витрина</div>
+                    <div class="map-col-sub">Слева позиции из фида (каталог сайта / YML). Здесь берём <strong>key</strong> варианта товара.</div>
+                    <h4 style="margin:0 0 8px;font-size:14px;">Выбери строку</h4>
+                    <div id="feed-list" class="map-list"><div class="item small">Сначала шаги 1→3 сверху, затем выбери товар.</div></div>
                 </div>
                 <div class="map-step">
-                    <h4>Шаг 2: кандидаты из МойСклад (авто при выборе слева)</h4>
+                    <div class="map-col-title">МойСклад</div>
+                    <div class="map-col-sub">Справа кандидаты из <strong>локального кэша</strong> номенклатуры МС (не напрямую из облака при каждом клике).</div>
+                    <h4 style="margin:0 0 8px;font-size:14px;">Кандидаты (авто после выбора слева)</h4>
+                    <div class="small" style="margin-bottom:6px;">Быстрый поиск по кэшу: <strong>артикул, код, ext, название</strong>. Несколько слов через пробел — все должны встретиться (как фильтр в справочнике).</div>
                     <div class="row" style="margin-bottom:8px;">
-                        <input id="ms-q" placeholder="ручной поиск в МС" style="flex:1;min-width:260px;">
-                        <button id="btn-ms-search" class="secondary">Искать</button>
+                        <input id="ms-q" placeholder="напр. 718503082831 или роза софи" style="flex:1;min-width:260px;" autocomplete="off">
+                        <button type="button" id="btn-ms-search" class="secondary">Искать</button>
                     </div>
-                    <div id="ms-list" class="map-list"><div class="item small">Выбери товар слева — справа появится топ-8 с оценкой совпадения. Или введи запрос и «Искать».</div></div>
+                    <div id="ms-list" class="map-list"><div class="item small">Выбери товар слева — справа топ-8 с оценкой. Пусто? Обнови кэш МС (шаг 2).</div></div>
                 </div>
             </div>
 
-            <div class="map-step" style="margin-top:10px;">
-                <h4>Шаг 3: сохранить связку</h4>
+            <div class="map-bot-box">
+                <div class="map-col-title">Связка для мини-приложения и заказов</div>
+                <div class="map-col-sub">Эти поля — то, что сохраняется в базе и используется бэкендом при оформлении заказа из <strong>Telegram mini app</strong>: по <strong>tilda key</strong> подставляется позиция МойСклада. Без сохранённой пары заказ может создать «левую» номенклатуру.</div>
                 <div class="row" style="flex-wrap:wrap;align-items:center;gap:8px;">
                     <input id="map-tilda-key" placeholder="tilda key" style="min-width:200px;">
                     <input id="map-ms-name" placeholder="название МС" style="min-width:180px;">
                     <input id="map-ms-id" placeholder="ms id" style="min-width:120px;">
                     <input id="map-ms-href" placeholder="ms href" style="flex:1;min-width:220px;">
-                    <button id="btn-map-save">Сохранить маппинг</button>
+                    <button type="button" id="btn-map-save">Сохранить маппинг</button>
                 </div>
             </div>
 
@@ -155,6 +172,6 @@
         </div>
     </div>
 </div>
-<script src="/app/static/admin.js?v=5"></script>
+<script src="/app/static/admin.js?v=7"></script>
 </body>
 </html>

@@ -60,6 +60,7 @@ from backend.orders import (
     replace_ms_assortment_cache,
     search_ms_assortment_cache,
     suggest_ms_assortment_cache,
+    count_ms_assortment_cache_rows,
     list_order_telegram_users,
 )
 from backend.payments import create_payment, is_yookassa_ready, PaymentConfigError
@@ -787,6 +788,44 @@ async def admin_feed_refresh(request: Request):
         "products_count": len(_cache.get("products") or []),
         "last_update": _cache.get("last_update"),
     }
+
+
+def _admin_mapping_stats_payload() -> dict:
+    """Счётчики по текущему фиду в памяти и таблице маппингов."""
+    mappings = {m.get("tilda_key") for m in list_product_mappings(limit=200000)}
+    total = 0
+    mapped = 0
+    for p in _cache.get("products") or []:
+        variants = p.get("variants") or []
+        if variants:
+            for v in variants:
+                key = str(v.get("code") or v.get("id") or "").strip()
+                if not key:
+                    continue
+                total += 1
+                if key in mappings:
+                    mapped += 1
+        else:
+            key = str(p.get("code") or p.get("id") or "").strip()
+            if not key:
+                continue
+            total += 1
+            if key in mappings:
+                mapped += 1
+    unmapped = max(0, total - mapped)
+    return {
+        "feed_variants_total": total,
+        "mapped_count": mapped,
+        "unmapped_count": unmapped,
+        "mappings_db_rows": len(mappings),
+        "ms_cache_rows": count_ms_assortment_cache_rows(),
+    }
+
+
+@app.get("/api/admin/mapping-stats")
+async def admin_mapping_stats(request: Request):
+    _require_admin(request)
+    return _admin_mapping_stats_payload()
 
 
 @app.get("/api/admin/feed-products")
