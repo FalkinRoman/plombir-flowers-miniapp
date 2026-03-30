@@ -212,6 +212,24 @@ function closeOrderDetail() {
   }
 }
 
+const EMPTY_FEED =
+  '<div class="item small">Нет строк: либо всё уже промаплено, либо нет совпадений по поиску. Попробуйте «Обновить фид» или снимите фильтр (пока только непромапленные).</div>';
+
+async function refreshFeed() {
+  setMsg("map-msg", "Качаю YML и обновляю фид…");
+  try {
+    const data = await api("/admin/feed/refresh", { method: "POST" });
+    setMsg(
+      "map-msg",
+      `Фид обновлён: ${data.products_count} товаров, ${data.categories_count} категорий${data.last_update ? ` · ${data.last_update}` : ""}`,
+      true,
+    );
+    await loadFeedProducts();
+  } catch (e) {
+    setMsg("map-msg", `Ошибка: ${e.message}`);
+  }
+}
+
 async function loadFeedProducts() {
   const q = $("feed-q").value.trim();
   const rows = await api(`/admin/feed-products?limit=300&unmapped_only=true&q=${encodeURIComponent(q)}`);
@@ -219,20 +237,24 @@ async function loadFeedProducts() {
     <div class="item">
       <div><strong>${esc(r.name)}</strong></div>
       <div class="small mono">key: ${esc(r.tilda_key)}</div>
-      <button class="secondary" onclick="pickTildaKey('${esc(r.tilda_key)}')">Взять key</button>
+      <button type="button" class="secondary btn-pick-feed" data-k="${encodeURIComponent(String(r.tilda_key))}">Взять key → искать в МС</button>
     </div>
-  `).join("") || '<div class="item small">Нет данных</div>';
+  `).join("") || EMPTY_FEED;
 }
 
-window.pickTildaKey = function (key) {
-  $("map-tilda-key").value = key;
-};
+/** Подставить key из поля и сразу искать кандидатов в кэше МС */
+async function suggestMsFromTildaKey() {
+  const key = $("map-tilda-key").value.trim();
+  if (!key) return setMsg("map-msg", "Сначала введите tilda key или выберите позицию слева");
+  $("ms-q").value = key;
+  $("map-ms-href").value = "";
+  $("map-ms-id").value = "";
+  $("map-ms-name").value = "";
+  searchMs().catch((e) => setMsg("map-msg", e.message));
+}
 
-window.pickMs = function (href, id, name) {
-  $("map-ms-href").value = href;
-  $("map-ms-id").value = id || "";
-  $("map-ms-name").value = name || "";
-};
+const EMPTY_MS =
+  '<div class="item small">Нет строк в локальном кэше по этому запросу. Нажмите «Обновить кэш МС» (нужен MOYSKLAD_TOKEN в .env), подождите окончания, затем «Искать МС» снова.</div>';
 
 async function searchMs() {
   const q = $("ms-q").value.trim();
@@ -242,9 +264,12 @@ async function searchMs() {
       <div><strong>${esc(r.name || "")}</strong></div>
       <div class="small mono">code=${esc(r.code || "")} · ext=${esc(r.external_code || "")}</div>
       <div class="small mono">${esc(r.ms_href || "")}</div>
-      <button class="secondary" onclick="pickMs('${esc(r.ms_href)}', '${esc(r.ms_id || "")}', '${esc(r.name || "")}')">Выбрать</button>
+      <button type="button" class="secondary btn-pick-ms"
+        data-href="${encodeURIComponent(r.ms_href || "")}"
+        data-mid="${encodeURIComponent(r.ms_id || "")}"
+        data-mname="${encodeURIComponent(r.name || "")}">Выбрать</button>
     </div>
-  `).join("") || '<div class="item small">Нет данных</div>';
+  `).join("") || EMPTY_MS;
 }
 
 async function refreshMsCache() {
@@ -271,6 +296,7 @@ async function saveMapping() {
     await api("/admin/mappings", { method: "POST", body: JSON.stringify(payload) });
     setMsg("map-msg", "Маппинг сохранён", true);
     await loadMappings();
+    await loadFeedProducts();
   } catch (e) {
     setMsg("map-msg", `Ошибка: ${e.message}`);
   }
@@ -319,6 +345,28 @@ async function sendBroadcast() {
   }
 }
 
+function bindMappingClicks() {
+  $("feed-list").addEventListener("click", (ev) => {
+    const btn = ev.target.closest(".btn-pick-feed");
+    if (!btn || !btn.dataset.k) return;
+    const key = decodeURIComponent(btn.dataset.k);
+    $("map-tilda-key").value = key;
+    $("ms-q").value = key;
+    $("map-ms-href").value = "";
+    $("map-ms-id").value = "";
+    $("map-ms-name").value = "";
+    searchMs().catch((e) => setMsg("map-msg", e.message));
+  });
+  $("ms-list").addEventListener("click", (ev) => {
+    const btn = ev.target.closest(".btn-pick-ms");
+    if (!btn) return;
+    $("map-ms-href").value = decodeURIComponent(btn.dataset.href || "");
+    $("map-ms-id").value = decodeURIComponent(btn.dataset.mid || "");
+    $("map-ms-name").value = decodeURIComponent(btn.dataset.mname || "");
+    setMsg("map-msg", "Позиция МС подставлена — нажмите «Сохранить маппинг».", true);
+  });
+}
+
 function bind() {
   $("btn-login").addEventListener("click", login);
   $("btn-logout").addEventListener("click", logout);
@@ -327,12 +375,15 @@ function bind() {
   $("orders-status").addEventListener("change", renderOrders);
   $("btn-order-back").addEventListener("click", closeOrderDetail);
   $("btn-feed-load").addEventListener("click", () => loadFeedProducts().catch((e) => setMsg("map-msg", e.message)));
+  $("btn-feed-refresh").addEventListener("click", () => refreshFeed().catch((e) => setMsg("map-msg", e.message)));
   $("btn-ms-search").addEventListener("click", () => searchMs().catch((e) => setMsg("map-msg", e.message)));
+  $("btn-ms-suggest").addEventListener("click", () => suggestMsFromTildaKey().catch((e) => setMsg("map-msg", e.message)));
   $("btn-ms-refresh").addEventListener("click", refreshMsCache);
   $("btn-map-save").addEventListener("click", saveMapping);
   $("btn-map-delete").addEventListener("click", deleteMapping);
   $("btn-map-list").addEventListener("click", loadMappings);
   $("btn-broadcast").addEventListener("click", sendBroadcast);
+  bindMappingClicks();
   setupTabs();
 }
 

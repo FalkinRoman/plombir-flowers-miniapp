@@ -774,6 +774,20 @@ async def admin_mappings_delete(request: Request, tilda_key: str):
     return {"ok": True}
 
 
+@app.post("/api/admin/feed/refresh")
+async def admin_feed_refresh(request: Request):
+    """Принудительно перечитать YML-фид (как при старте сервера и по расписанию)."""
+    _require_admin(request)
+    await refresh_feed()
+    return {
+        "ok": True,
+        "loaded": bool(_cache.get("loaded")),
+        "categories_count": len(_cache.get("categories") or []),
+        "products_count": len(_cache.get("products") or []),
+        "last_update": _cache.get("last_update"),
+    }
+
+
 @app.get("/api/admin/feed-products")
 async def admin_feed_products(
     request: Request,
