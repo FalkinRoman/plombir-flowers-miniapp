@@ -1280,6 +1280,14 @@ _FRONTEND_DIR = _ROOT_DIR / "frontend"
 
 _BANNERS_DIR.mkdir(parents=True, exist_ok=True)
 
+
+@app.get("/app/admin")
+@app.get("/app/admin/")
+async def admin_app_shortcut():
+    """Без .html статика не отдаёт admin.html (ищется файл «admin»). Редирект на реальный файл."""
+    return RedirectResponse(url="/app/admin.html")
+
+
 app.mount("/media/banners", StaticFiles(directory=str(_BANNERS_DIR)), name="media-banners")
 app.mount("/app", StaticFiles(directory=str(_FRONTEND_DIR), html=True), name="frontend")
 
