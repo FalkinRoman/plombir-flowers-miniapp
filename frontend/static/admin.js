@@ -46,14 +46,35 @@ function updateMapWizardUI() {
 const EMPTY_MS =
   '<div class="item small">Пусто. Обнови кэш МС или измени поиск.</div>';
 
+/** ms_type для БД/заказа: из API-href, не «assortment» по умолчанию (иначе meta.type не совпадает с href). */
+function inferMsTypeFromHref(href) {
+  const s = String(href || "").toLowerCase();
+  if (s.includes("/entity/variant/")) return "variant";
+  if (s.includes("/entity/service/")) return "service";
+  if (s.includes("/entity/bundle/")) return "bundle";
+  if (s.includes("/entity/consignment/")) return "consignment";
+  if (s.includes("/entity/product/")) return "product";
+  return "assortment";
+}
+
+/** Совпадает с id в API и с id= в веб-URL; uuidHref в JSON МС может отличаться. */
+function msIdFromRemapHref(href) {
+  const h = String(href || "").trim().replace(/\/+$/, "");
+  if (!h || !h.includes("/entity/")) return "";
+  const tail = h.split("/").pop() || "";
+  return tail.length >= 32 && tail.includes("-") ? tail : "";
+}
+
 function renderMsList(rows, opts = {}) {
   const mode = opts.mode || "search";
   const showScore = mode === "suggest";
+  const webTitle =
+    "Ссылка из id/API (как в meta.href). В ответе МС meta.uuidHref иногда другой UUID — для карточки берите id, не uuidHref.";
   const html = (Array.isArray(rows) ? rows : []).map((r) => {
     const web = String(r.ms_web_url || "").trim();
     const hrefHint = esc(r.ms_href || "");
     const webBlock = web
-      ? `<div class="small"><a href="${esc(web)}" target="_blank" rel="noopener noreferrer" title="${hrefHint}">В МС ↗</a></div>`
+      ? `<div class="small"><a href="${esc(web)}" target="_blank" rel="noopener noreferrer" title="${webTitle} API: ${hrefHint}">В МС ↗</a></div>`
       : "";
     return `
     <div class="item">
@@ -372,17 +393,20 @@ async function refreshMsCache() {
 }
 
 async function saveMapping() {
+  const href = $("map-ms-href").value.trim();
+  const idFromHref = msIdFromRemapHref(href);
   const payload = {
     tilda_key: $("map-tilda-key").value.trim(),
-    ms_href: $("map-ms-href").value.trim(),
-    ms_id: $("map-ms-id").value.trim(),
+    ms_href: href,
+    ms_id: idFromHref || $("map-ms-id").value.trim(),
     ms_name: $("map-ms-name").value.trim(),
-    ms_type: "assortment",
+    ms_type: inferMsTypeFromHref(href),
     note: "admin-ui",
   };
   if (!payload.tilda_key || !payload.ms_href) return setMsg("map-msg", "Нужны tilda key и ms href");
   try {
     await api("/admin/mappings", { method: "POST", body: JSON.stringify(payload) });
+    if (payload.ms_id) $("map-ms-id").value = payload.ms_id;
     setMsg("map-msg", "Сохранено", true);
     await loadMappings();
     await loadFeedProducts();
@@ -454,10 +478,13 @@ function bindMappingClicks() {
   $("ms-list").addEventListener("click", (ev) => {
     const btn = ev.target.closest(".btn-pick-ms");
     if (!btn) return;
-    $("map-ms-href").value = decodeURIComponent(btn.dataset.href || "");
-    $("map-ms-id").value = decodeURIComponent(btn.dataset.mid || "");
+    const href = decodeURIComponent(btn.dataset.href || "");
+    const midRaw = decodeURIComponent(btn.dataset.mid || "");
+    const mid = msIdFromRemapHref(href) || midRaw;
+    $("map-ms-href").value = href;
+    $("map-ms-id").value = mid;
     $("map-ms-name").value = decodeURIComponent(btn.dataset.mname || "");
-    setMsg("map-msg", "Ок · «Сохранить»", true);
+    setMsg("map-msg", "Подставлено из кэша (id = конец API-ссылки, как в заказах). «Сохранить»", true);
   });
 }
 

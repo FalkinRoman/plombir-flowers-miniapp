@@ -138,12 +138,22 @@
                 <div class="row" style="flex-wrap:wrap;align-items:center;gap:8px;">
                     <input id="map-tilda-key" placeholder="tilda key" style="min-width:180px;">
                     <input id="map-ms-name" placeholder="Название МС" style="min-width:160px;">
-                    <input id="map-ms-id" placeholder="ms id" style="min-width:110px;">
-                    <input id="map-ms-href" placeholder="ms href" style="flex:1;min-width:200px;">
+                    <input id="map-ms-id" placeholder="ms id (UUID из API)" style="min-width:110px;">
+                    <input id="map-ms-href" placeholder="ms href (как meta.href)" style="flex:1;min-width:200px;">
                     <button type="button" id="btn-map-save">Сохранить</button>
                     <button type="button" id="btn-map-clear" class="secondary">Сброс</button>
                 </div>
             </div>
+
+            <details style="margin-top:10px;" class="small">
+                <summary style="cursor:pointer;font-weight:600;">Про uuidHref в JSON МС и ссылку «В МС»</summary>
+                <div style="margin-top:8px;line-height:1.45;color:#374151;">
+                    В ответе API у сущности есть <code>id</code>, <code>meta.href</code> и иногда <code>meta.uuidHref</code>.
+                    Для заказов и для параметра <code>id=</code> в браузере нужны одни и те же UUID — из <code>id</code> или с конца <code>meta.href</code> (например <code>…/entity/product/46b3c377-…</code>).
+                    Поле <code>uuidHref</code> у МойСклада бывает с <strong>другим</strong> UUID — его не используем для маппинга и не сравниваем с колонкой «В МС».
+                    Достаточно <code>MOYSKLAD_TOKEN</code> на сервере: после «Обновить кэш МС» кэш и кнопка «Выбрать» подставляют правильные <code>href</code> и id автоматически, отдельный логин в JSON в админке не нужен.
+                </div>
+            </details>
 
             <div id="map-msg" class="small" style="margin-top:8px;"></div>
 
@@ -173,6 +183,6 @@
         </div>
     </div>
 </div>
-<script src="/app/static/admin.js?v=12"></script>
+<script src="/app/static/admin.js?v=14"></script>
 </body>
 </html>

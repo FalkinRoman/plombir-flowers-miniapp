@@ -88,6 +88,23 @@ def _infer_ms_entity_type(meta: dict) -> str:
     return "product"
 
 
+def _entity_id_from_remap_href(href: str, fallback_id: str = "") -> str:
+    """
+    UUID — последний сегмент meta.href (…/entity/product/<uuid> и т.д.).
+    Совпадает с полем id в ответе API и с параметром id= в веб-URL карточки.
+    У МойСклада meta.uuidHref в JSON иногда отличается от id — для заказов и ссылок «В МС»
+    использовать только href/id, не uuidHref.
+    """
+    h = (href or "").strip().rstrip("/")
+    if not h:
+        return (fallback_id or "").strip()
+    try:
+        tail = h.split("/")[-1]
+    except IndexError:
+        return (fallback_id or "").strip()
+    return tail if tail else (fallback_id or "").strip()
+
+
 async def _telegram_send_message(chat_id: str, text: str, *, parse_mode: str = "HTML") -> bool:
     """Отправка в Telegram с таймаутом; True если ок."""
     if not BOT_TOKEN or not chat_id:
@@ -925,9 +942,11 @@ async def admin_refresh_moysklad_cache(request: Request):
             chunk = data.get("rows") or []
             for r in chunk:
                 meta = (r or {}).get("meta") or {}
+                api_href = str(meta.get("href") or "")
+                row_id = str((r or {}).get("id") or "")
                 rows.append({
-                    "ms_id": str((r or {}).get("id") or ""),
-                    "ms_href": str(meta.get("href") or ""),
+                    "ms_id": _entity_id_from_remap_href(api_href, row_id),
+                    "ms_href": api_href,
                     "ms_type": _infer_ms_entity_type(meta),
                     "ms_product_id": ms_product_id_from_assortment_api_row(r or {}),
                     "name": str((r or {}).get("name") or ""),

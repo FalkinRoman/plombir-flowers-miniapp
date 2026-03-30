@@ -627,14 +627,28 @@ def replace_ms_assortment_cache(rows: list[dict]):
     conn.close()
 
 
+def _ms_id_aligned_with_href(ms_href: str, ms_id: str) -> str:
+    """UUID из конца API-href — источник истины, если href и ms_id когда-то разъехались (старые маппинги)."""
+    h = (ms_href or "").strip().rstrip("/")
+    if h and "/entity/" in h:
+        try:
+            tail = h.split("/")[-1]
+            if tail and "-" in tail and len(tail) >= 32:
+                return tail
+        except IndexError:
+            pass
+    return (ms_id or "").strip()
+
+
 def ms_online_web_url(ms_href: str, ms_type: str, ms_id: str, ms_product_id: str = "") -> str:
     """
     Ссылка на карточку в веб-интерфейсе МойСклада (не API href).
     Модификация: один только id=variant или только id=product даёт у части аккаунтов
     «товар не найден» — веб ожидает пару родитель + модификация в query.
     При наличии ms_product_id (expand=product в кэше): id=<product>&variantId=<variant>.
+    Параметр id= в URL должен совпадать с id в API / последним сегментом meta.href, не с meta.uuidHref.
     """
-    mid = (ms_id or "").strip()
+    mid = _ms_id_aligned_with_href(ms_href, ms_id)
     if not mid:
         return ""
     base = "https://online.moysklad.ru/app/#"
