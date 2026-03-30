@@ -627,52 +627,11 @@ def replace_ms_assortment_cache(rows: list[dict]):
     conn.close()
 
 
-def _is_ms_cache_product_row(row: dict) -> bool:
-    """Строка кэша — номенклатура «товар», не модификация."""
-    h = str((row or {}).get("ms_href") or "").lower()
-    t = str((row or {}).get("ms_type") or "").lower()
-    if "/entity/product/" in h:
-        return True
-    if t == "product" and "/entity/variant/" not in h:
-        return True
-    return False
-
-
-def _dedupe_ms_cache_rows_prefer_product(rows: list[dict]) -> list[dict]:
-    """
-    У одного code в assortment часто две строки: product и variant (разные ms_id).
-    В веб-интерфейсе «правильная» карточка товара — по id родителя (#good/edit?id=<product>);
-    дедуп: оставляем строку товара, если есть, иначе модификацию.
-    """
-    if not rows:
-        return rows
-    by_key: dict[str, list[dict]] = {}
-    key_order: list[str] = []
-    for r in rows:
-        c = str((r or {}).get("code") or "").strip()
-        e = str((r or {}).get("external_code") or "").strip()
-        key = c if c else (e if e else f"__msid_{(r or {}).get('ms_id')}")
-        if key not in by_key:
-            key_order.append(key)
-            by_key[key] = []
-        by_key[key].append(dict(r))
-    out: list[dict] = []
-    for key in key_order:
-        grp = by_key[key]
-        if len(grp) == 1:
-            out.append(grp[0])
-            continue
-        prods = [x for x in grp if _is_ms_cache_product_row(x)]
-        out.append(prods[0] if prods else grp[0])
-    return out
-
-
 def ms_online_web_url(ms_href: str, ms_type: str, ms_id: str, ms_product_id: str = "") -> str:
     """
     Ссылка на карточку в веб-интерфейсе МойСклада (не API href).
-    У модификации в URL должен быть id родительского товара: #good/edit?id=<product>,
-    иначе открывается «не та» карточка (другой uuid). Если в кэше есть ms_product_id —
-    всегда он; иначе fallback на id модификации.
+    Для variant используем id самой строки assortment (ms_id): в ряде аккаунтов
+    именно он совпадает с карточкой, которая открывается из каталога МС.
     """
     mid = (ms_id or "").strip()
     if not mid:
@@ -680,11 +639,8 @@ def ms_online_web_url(ms_href: str, ms_type: str, ms_id: str, ms_product_id: str
     base = "https://online.moysklad.ru/app/#"
     href = (ms_href or "").lower()
     tid = (ms_type or "").lower().strip()
-    pid = (ms_product_id or "").strip()
     # Надёжнее всего — сегмент entity/... в API href из кэша
     if "/entity/variant/" in href or tid == "variant":
-        if pid:
-            return f"{base}good/edit?id={pid}"
         return f"{base}good/edit?id={mid}"
     if "/entity/service/" in href or tid == "service":
         return f"{base}service/edit?id={mid}"
@@ -736,8 +692,7 @@ def search_ms_assortment_cache(query: str = "", limit: int = 200) -> list[dict]:
             (lim,),
         ).fetchall()
         conn.close()
-        deduped = _dedupe_ms_cache_rows_prefer_product([dict(r) for r in rows])
-        return [_with_ms_web_url(r) for r in deduped]
+        return [_with_ms_web_url(dict(r)) for r in rows]
 
     tokens = [t for t in raw.lower().split() if t]
     if not tokens:
@@ -757,8 +712,7 @@ def search_ms_assortment_cache(query: str = "", limit: int = 200) -> list[dict]:
             (q, q, q, q, lim),
         ).fetchall()
         conn.close()
-        deduped = _dedupe_ms_cache_rows_prefer_product([dict(r) for r in rows])
-        return [_with_ms_web_url(r) for r in deduped]
+        return [_with_ms_web_url(dict(r)) for r in rows]
 
     else:
         parts: list[str] = []
@@ -781,8 +735,7 @@ def search_ms_assortment_cache(query: str = "", limit: int = 200) -> list[dict]:
         params.append(lim)
         rows = conn.execute(sql, tuple(params)).fetchall()
     conn.close()
-    deduped = _dedupe_ms_cache_rows_prefer_product([dict(r) for r in rows])
-    return [_with_ms_web_url(r) for r in deduped]
+    return [_with_ms_web_url(dict(r)) for r in rows]
 
 
 def _norm_text(s: str) -> str:
@@ -853,9 +806,6 @@ def suggest_ms_assortment_cache(
 
         if r.get("archived"):
             score = max(0.0, score - 0.08)
-
-        if _is_ms_cache_product_row(r):
-            score = min(1.0, score + 0.04)
 
         scored.append((score, r))
 
