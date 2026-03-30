@@ -20,6 +20,10 @@
         .tab { background: #fff; color: #111; border: 1px solid #d1d5db; }
         .tab.active { background: #111; color: #fff; border-color: #111; }
         .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .map-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
+        .map-step { border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px; background: #fff; }
+        .map-step h4 { margin: 0 0 8px; font-size: 14px; }
+        .map-list { max-height: 46vh; overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px; }
         .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
         .small { font-size: 12px; color: #555; }
         .list { max-height: 65vh; overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px; }
@@ -32,7 +36,7 @@
         #order-detail-content { word-break: break-word; font-size: 13px; line-height: 1.35; }
         .broadcast-controls { margin-top: 14px; align-items: center; }
         .broadcast-help { margin-top: 10px; line-height: 1.35; }
-        @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+        @media (max-width: 900px) { .grid2, .map-grid { grid-template-columns: 1fr; } .map-list { max-height: 38vh; } }
     </style>
 </head>
 <body>
@@ -90,44 +94,50 @@
 
         <div id="tab-mapping" class="card hidden">
             <h3 style="margin-top:0;">Маппинг товаров</h3>
-            <div class="small" style="margin-bottom:12px;line-height:1.5;max-width:900px;">
-                <strong>Как связать новую позицию:</strong> один раз «Обновить фид» и «Обновить кэш МС». Слева «Показать фид» — только строки <em>без</em> маппинга.
-                Нажмите <strong>«Взять key → искать в МС»</strong> у нужной позиции: подставится key и справа появятся кандидаты из МойСклада.
-                Выберите строку «Выбрать», при необходимости поправьте поля внизу и нажмите <strong>«Сохранить маппинг»</strong>. Полностью без рук нельзя — в МС и в фиде разные идентификаторы, вы подтверждаете связку.
+            <div class="row" style="margin-bottom:10px;">
+                <button id="btn-feed-refresh" class="secondary">1) Обновить фид</button>
+                <button id="btn-ms-refresh">2) Обновить кэш МС</button>
+                <button id="btn-feed-load" class="secondary">3) Показать непромапленные</button>
+                <input id="feed-q" placeholder="фильтр по фиду (опционально)" style="min-width:240px;">
             </div>
-            <div class="row">
-                <button id="btn-ms-refresh">Обновить кэш МС</button>
-                <button id="btn-feed-refresh" class="secondary">Обновить фид</button>
-                <input id="feed-q" placeholder="поиск в фиде">
-                <button id="btn-feed-load" class="secondary">Показать фид</button>
-                <input id="ms-q" placeholder="поиск в кэше МС">
-                <button id="btn-ms-search" class="secondary">Искать МС</button>
-            </div>
-            <div class="grid2" style="margin-top:10px;">
-                <div>
-                    <div class="small">Товары из фида</div>
-                    <div id="feed-list" class="list"><div class="item small">«Показать фид» — непромапленные позиции из фида. «Обновить фид» — скачать свежий YML с сайта.</div></div>
+
+            <div class="map-grid">
+                <div class="map-step">
+                    <h4>Шаг 1: выбери товар из фида</h4>
+                    <div id="feed-list" class="map-list"><div class="item small">Нажми «Показать непромапленные». Затем выбери нужный товар.</div></div>
                 </div>
-                <div>
-                    <div class="small">Кэш ассортимента МойСклад</div>
-                    <div id="ms-list" class="list"><div class="item small">«Пусто» здесь не значит «нет товаров в МС» — локальный кэш не загружен или не совпадён поиск. Сначала «Обновить кэш МС», затем «Искать МС» (пустой поиск — первые 200 позиций).</div></div>
+                <div class="map-step">
+                    <h4>Шаг 2: кандидаты из МойСклад (авто при выборе слева)</h4>
+                    <div class="row" style="margin-bottom:8px;">
+                        <input id="ms-q" placeholder="ручной поиск в МС" style="flex:1;min-width:260px;">
+                        <button id="btn-ms-search" class="secondary">Искать</button>
+                    </div>
+                    <div id="ms-list" class="map-list"><div class="item small">Выбери товар слева — справа появится топ-8 с оценкой совпадения. Или введи запрос и «Искать».</div></div>
                 </div>
             </div>
-            <div class="row" style="margin-top:10px;flex-wrap:wrap;align-items:center;gap:8px;">
-                <input id="map-tilda-key" placeholder="tilda key (из фида)" style="min-width:200px;">
-                <button id="btn-ms-suggest" type="button" class="secondary">Искать по key в МС</button>
-                <input id="map-ms-href" placeholder="ms href" style="flex:1;min-width:240px;">
-                <input id="map-ms-id" placeholder="ms id" style="min-width:120px;">
-                <input id="map-ms-name" placeholder="ms name" style="min-width:140px;">
-                <button id="btn-map-save">Сохранить маппинг</button>
+
+            <div class="map-step" style="margin-top:10px;">
+                <h4>Шаг 3: сохранить связку</h4>
+                <div class="row" style="flex-wrap:wrap;align-items:center;gap:8px;">
+                    <input id="map-tilda-key" placeholder="tilda key" style="min-width:200px;">
+                    <input id="map-ms-name" placeholder="название МС" style="min-width:180px;">
+                    <input id="map-ms-id" placeholder="ms id" style="min-width:120px;">
+                    <input id="map-ms-href" placeholder="ms href" style="flex:1;min-width:220px;">
+                    <button id="btn-map-save">Сохранить маппинг</button>
+                </div>
             </div>
-            <div class="row" style="margin-top:8px;">
-                <input id="map-delete-key" placeholder="tilda key для удаления">
-                <button id="btn-map-delete" class="secondary">Удалить маппинг</button>
-                <button id="btn-map-list" class="secondary">Показать маппинги</button>
-            </div>
+
             <div id="map-msg" class="small" style="margin-top:8px;"></div>
-            <div id="mapping-list" class="list" style="margin-top:8px;"></div>
+
+            <details style="margin-top:8px;">
+                <summary class="small" style="cursor:pointer;">Расширенные действия</summary>
+                <div class="row" style="margin-top:8px;">
+                    <input id="map-delete-key" placeholder="tilda key для удаления">
+                    <button id="btn-map-delete" class="secondary">Удалить маппинг</button>
+                    <button id="btn-map-list" class="secondary">Показать маппинги</button>
+                </div>
+                <div id="mapping-list" class="list" style="margin-top:8px;"></div>
+            </details>
         </div>
 
         <div id="tab-broadcast" class="card hidden">
@@ -145,6 +155,6 @@
         </div>
     </div>
 </div>
-<script src="/app/static/admin.js?v=3"></script>
+<script src="/app/static/admin.js?v=5"></script>
 </body>
 </html>

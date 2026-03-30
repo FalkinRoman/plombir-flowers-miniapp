@@ -7,6 +7,8 @@ import datetime
 import os
 import hashlib
 import secrets
+import re
+from difflib import SequenceMatcher
 from typing import Optional, List
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "orders.db")
@@ -623,6 +625,85 @@ def search_ms_assortment_cache(query: str = "", limit: int = 200) -> list[dict]:
         ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def _norm_text(s: str) -> str:
+    s = (s or "").lower().strip()
+    s = re.sub(r"\s+", " ", s)
+    return s
+
+
+def _tokens(s: str) -> set[str]:
+    return {t for t in re.split(r"[^\w\d]+", _norm_text(s)) if len(t) >= 2}
+
+
+def suggest_ms_assortment_cache(
+    feed_name: str = "",
+    tilda_key: str = "",
+    *,
+    limit: int = 8,
+) -> list[dict]:
+    """
+    Топ кандидатов из локального кэша МС для связки с позицией фида.
+    Скоринг: похожесть названия + пересечение токенов + совпадение code/external_code с key.
+    """
+    lim = max(1, min(int(limit), 50))
+    conn = _get_conn()
+    rows = conn.execute(
+        """
+        SELECT ms_id, ms_href, ms_type, name, code, external_code, archived, updated_at
+          FROM ms_assortment_cache
+        """,
+    ).fetchall()
+    conn.close()
+    if not rows:
+        return []
+
+    fn = _norm_text(feed_name)[:400]
+    tk = (tilda_key or "").strip()
+    tk_l = _norm_text(tk)
+    feed_toks = _tokens(feed_name)
+
+    scored: list[tuple[float, dict]] = []
+    for row in rows:
+        r = dict(row)
+        name = str(r.get("name") or "")
+        code = str(r.get("code") or "")
+        ext = str(r.get("external_code") or "")
+        mn = _norm_text(name)[:400]
+        if not mn and not code:
+            continue
+
+        score = 0.0
+        if fn:
+            score = SequenceMatcher(None, fn, mn).ratio()
+            mt = _tokens(name)
+            if feed_toks and mt:
+                inter = len(feed_toks & mt) / max(len(feed_toks), 1)
+                score = max(score, 0.25 * inter + 0.65 * SequenceMatcher(None, fn[:200], mn[:200]).ratio())
+        elif tk:
+            score = 0.05
+
+        if tk:
+            if tk_l and (tk_l == _norm_text(code) or tk_l == _norm_text(ext)):
+                score = min(1.0, score + 0.45)
+            elif tk in code or tk in ext:
+                score = min(1.0, score + 0.35)
+            elif tk_l and (tk_l in _norm_text(code) or tk_l in _norm_text(ext)):
+                score = min(1.0, score + 0.2)
+
+        if r.get("archived"):
+            score = max(0.0, score - 0.08)
+
+        scored.append((score, r))
+
+    scored.sort(key=lambda x: (-x[0], str(x[1].get("name") or "")))
+    out: list[dict] = []
+    for sc, r in scored[:lim]:
+        d = dict(r)
+        d["score"] = round(float(sc), 3)
+        out.append(d)
+    return out
 
 
 def list_order_telegram_users(limit: int = 5000) -> list[dict]:

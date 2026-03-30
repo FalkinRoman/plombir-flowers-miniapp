@@ -20,6 +20,28 @@ const STATUS_ORDER_MAP = {
 
 let token = localStorage.getItem(TOKEN_KEY) || "";
 let ordersCache = [];
+let selectedFeedItem = null;
+
+const EMPTY_MS =
+  '<div class="item small">Нет строк в локальном кэше. Сначала «Обновить кэш МС», затем снова выбери товар или «Искать».</div>';
+
+function renderMsList(rows, opts = {}) {
+  const mode = opts.mode || "search";
+  const showScore = mode === "suggest";
+  const html = (Array.isArray(rows) ? rows : []).map((r) => `
+    <div class="item">
+      ${showScore ? `<div class="small" style="color:#065f46;font-weight:600;">~${Math.round(Number(r.score || 0) * 100)}% совпадение</div>` : ""}
+      <div><strong>${esc(r.name || "")}</strong></div>
+      <div class="small mono">code=${esc(r.code || "")} · ext=${esc(r.external_code || "")}</div>
+      <div class="small mono">${esc(r.ms_href || "")}</div>
+      <button type="button" class="secondary btn-pick-ms"
+        data-href="${encodeURIComponent(r.ms_href || "")}"
+        data-mid="${encodeURIComponent(r.ms_id || "")}"
+        data-mname="${encodeURIComponent(r.name || "")}">Выбрать</button>
+    </div>
+  `).join("");
+  $("ms-list").innerHTML = html || EMPTY_MS;
+}
 
 async function api(path, opts = {}) {
   const headers = { ...(opts.headers || {}) };
@@ -237,39 +259,48 @@ async function loadFeedProducts() {
     <div class="item">
       <div><strong>${esc(r.name)}</strong></div>
       <div class="small mono">key: ${esc(r.tilda_key)}</div>
-      <button type="button" class="secondary btn-pick-feed" data-k="${encodeURIComponent(String(r.tilda_key))}">Взять key → искать в МС</button>
+      <button type="button" class="secondary btn-pick-feed"
+        data-k="${encodeURIComponent(String(r.tilda_key))}"
+        data-name="${encodeURIComponent(String(r.name || ""))}">Выбрать товар</button>
     </div>
   `).join("") || EMPTY_FEED;
 }
 
-/** Подставить key из поля и сразу искать кандидатов в кэше МС */
-async function suggestMsFromTildaKey() {
-  const key = $("map-tilda-key").value.trim();
-  if (!key) return setMsg("map-msg", "Сначала введите tilda key или выберите позицию слева");
-  $("ms-q").value = key;
-  $("map-ms-href").value = "";
-  $("map-ms-id").value = "";
-  $("map-ms-name").value = "";
-  searchMs().catch((e) => setMsg("map-msg", e.message));
+/** Автоподбор топ-N из кэша МС по названию фида + key (серверный скоринг). */
+async function suggestMsForFeed(feedName, tildaKey) {
+  const params = new URLSearchParams({
+    feed_name: feedName || "",
+    tilda_key: tildaKey || "",
+    limit: "8",
+  });
+  const rows = await api(`/admin/moysklad/cache/suggest?${params.toString()}`);
+  renderMsList(rows, { mode: "suggest" });
+  if (!rows.length) {
+    $("ms-q").value = (feedName || "").replace(/\s*-\s*.*$/, "").trim() || tildaKey;
+    await searchMs();
+    setMsg("map-msg", "Автоподбор пуст — открыт ручной поиск по названию.", false);
+    return;
+  }
+  const top = rows[0];
+  setMsg(
+    "map-msg",
+    `Топ-${rows.length} кандидатов. Часто хватает первой строки → «Выбрать» → «Сохранить». Лучший: «${(top.name || "").slice(0, 60)}${(top.name || "").length > 60 ? "…" : ""}»`,
+    true,
+  );
 }
-
-const EMPTY_MS =
-  '<div class="item small">Нет строк в локальном кэше по этому запросу. Нажмите «Обновить кэш МС» (нужен MOYSKLAD_TOKEN в .env), подождите окончания, затем «Искать МС» снова.</div>';
 
 async function searchMs() {
   const q = $("ms-q").value.trim();
   const rows = await api(`/admin/moysklad/cache/search?q=${encodeURIComponent(q)}&limit=200`);
-  $("ms-list").innerHTML = rows.map((r) => `
-    <div class="item">
-      <div><strong>${esc(r.name || "")}</strong></div>
-      <div class="small mono">code=${esc(r.code || "")} · ext=${esc(r.external_code || "")}</div>
-      <div class="small mono">${esc(r.ms_href || "")}</div>
-      <button type="button" class="secondary btn-pick-ms"
-        data-href="${encodeURIComponent(r.ms_href || "")}"
-        data-mid="${encodeURIComponent(r.ms_id || "")}"
-        data-mname="${encodeURIComponent(r.name || "")}">Выбрать</button>
-    </div>
-  `).join("") || EMPTY_MS;
+  let finalRows = rows;
+  let note = "";
+  if (q && (!Array.isArray(rows) || rows.length === 0)) {
+    finalRows = await api("/admin/moysklad/cache/search?q=&limit=200");
+    note = `По запросу «${q}» нет совпадений. Показаны первые ${finalRows.length} позиций из кэша МС.`;
+  }
+  renderMsList(finalRows, { mode: "search" });
+  if (note) setMsg("map-msg", note);
+  else setMsg("map-msg", `Найдено позиций в МС: ${finalRows.length}`, true);
 }
 
 async function refreshMsCache() {
@@ -350,12 +381,16 @@ function bindMappingClicks() {
     const btn = ev.target.closest(".btn-pick-feed");
     if (!btn || !btn.dataset.k) return;
     const key = decodeURIComponent(btn.dataset.k);
+    const name = decodeURIComponent(btn.dataset.name || "");
+    selectedFeedItem = { key, name };
     $("map-tilda-key").value = key;
-    $("ms-q").value = key;
+    // По key в МС обычно не ищется; первичный поиск лучше по названию позиции.
+    $("ms-q").value = (name || "").replace(/\s*-\s*.*$/, "").trim() || key;
     $("map-ms-href").value = "";
     $("map-ms-id").value = "";
     $("map-ms-name").value = "";
-    searchMs().catch((e) => setMsg("map-msg", e.message));
+    setMsg("map-msg", `Выбран товар из фида: ${name || key}. Подбираю кандидатов в МС…`, true);
+    suggestMsForFeed(name, key).catch((e) => setMsg("map-msg", e.message));
   });
   $("ms-list").addEventListener("click", (ev) => {
     const btn = ev.target.closest(".btn-pick-ms");
@@ -377,7 +412,6 @@ function bind() {
   $("btn-feed-load").addEventListener("click", () => loadFeedProducts().catch((e) => setMsg("map-msg", e.message)));
   $("btn-feed-refresh").addEventListener("click", () => refreshFeed().catch((e) => setMsg("map-msg", e.message)));
   $("btn-ms-search").addEventListener("click", () => searchMs().catch((e) => setMsg("map-msg", e.message)));
-  $("btn-ms-suggest").addEventListener("click", () => suggestMsFromTildaKey().catch((e) => setMsg("map-msg", e.message)));
   $("btn-ms-refresh").addEventListener("click", refreshMsCache);
   $("btn-map-save").addEventListener("click", saveMapping);
   $("btn-map-delete").addEventListener("click", deleteMapping);

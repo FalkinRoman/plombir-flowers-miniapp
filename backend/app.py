@@ -59,6 +59,7 @@ from backend.orders import (
     delete_product_mapping,
     replace_ms_assortment_cache,
     search_ms_assortment_cache,
+    suggest_ms_assortment_cache,
     list_order_telegram_users,
 )
 from backend.payments import create_payment, is_yookassa_ready, PaymentConfigError
@@ -886,6 +887,19 @@ async def admin_refresh_moysklad_cache(request: Request):
 async def admin_search_moysklad_cache(request: Request, q: str = "", limit: int = 100):
     _require_admin(request)
     return search_ms_assortment_cache(query=q, limit=limit)
+
+
+@app.get("/api/admin/moysklad/cache/suggest")
+async def admin_suggest_moysklad_cache(
+    request: Request,
+    feed_name: str = "",
+    tilda_key: str = "",
+    limit: int = 8,
+):
+    """Топ кандидатов из кэша МС для выбранной позиции фида (автоподбор)."""
+    _require_admin(request)
+    lim = max(1, min(int(limit), 50))
+    return suggest_ms_assortment_cache(feed_name=feed_name, tilda_key=tilda_key, limit=lim)
 
 
 @app.post("/api/admin/broadcast")
