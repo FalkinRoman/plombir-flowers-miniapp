@@ -3,6 +3,20 @@ const TOKEN_KEY = "plombir_admin_token";
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[m]));
+const STATUS_PAYMENT_MAP = {
+  pending: "Ожидает оплаты",
+  succeeded: "Оплачен",
+  canceled: "Отменен",
+  not_required: "Оплата не требуется",
+};
+const STATUS_ORDER_MAP = {
+  "Создан": "Создан",
+  "Оплачен": "Оплачен",
+  "Флорист": "Передан флористу",
+  "Курьер": "Передан курьеру",
+  "Доставлен": "Доставлен",
+  "Отменен": "Отменен",
+};
 
 let token = localStorage.getItem(TOKEN_KEY) || "";
 let ordersCache = [];
@@ -21,6 +35,8 @@ async function api(path, opts = {}) {
 
 function setAuthMsg(msg, ok = false) { $("auth-msg").textContent = msg; $("auth-msg").style.color = ok ? "#065f46" : "#b91c1c"; }
 function setMsg(id, msg, ok = false) { $(id).textContent = msg; $(id).style.color = ok ? "#065f46" : "#b91c1c"; }
+function trPaymentStatus(s) { return STATUS_PAYMENT_MAP[String(s || "").toLowerCase()] || String(s || "—"); }
+function trOrderStatus(s) { return STATUS_ORDER_MAP[String(s || "")] || String(s || "—"); }
 
 function showAuthed(user) {
   $("auth-card").classList.add("hidden");
@@ -112,18 +128,74 @@ function renderOrders() {
   $("orders-list").innerHTML = rows.map((o) => `
     <div class="item">
       <button class="order-click" onclick="openOrder(${Number(o.id)})">
-        <div><strong>#${o.id}</strong> · ${esc(o.customer_name)} · ${esc(o.status)} · ${Math.round(Number(o.total || 0))} ₽</div>
-        <div class="small mono">${esc(o.customer_phone || "")} · ${esc(o.payment_status || "")} · ${esc(o.created_at || "")}</div>
+        <div><strong>#${o.id}</strong> · ${esc(o.customer_name)} · ${esc(trOrderStatus(o.status))} · ${Math.round(Number(o.total || 0))} ₽</div>
+        <div class="small mono">${esc(o.customer_phone || "")} · ${esc(trPaymentStatus(o.payment_status))} · ${esc(o.created_at || "")}</div>
       </button>
     </div>
   `).join("") || '<div class="item small">Ничего не найдено</div>';
+}
+
+function prettyDate(v) {
+  if (!v) return "—";
+  try {
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return String(v);
+    return d.toLocaleString("ru-RU");
+  } catch (_) {
+    return String(v);
+  }
+}
+
+function money(v) {
+  const n = Number(v || 0);
+  return `${Math.round(n)} ₽`;
+}
+
+function renderOrderDetailHtml(o) {
+  const items = Array.isArray(o.items) ? o.items : [];
+  const itemsHtml = items.map((it, idx) => {
+    const title = `${it.name || "Товар"}${it.variant_label ? ` (${it.variant_label})` : ""}`;
+    return `
+      <div style="padding:8px 0; border-top:1px solid #eee;">
+        <div><strong>${idx + 1}. ${esc(title)}</strong></div>
+        <div class="small">Количество: ${esc(it.quantity || 1)} · Цена: ${money(it.price || 0)} · Сумма: ${money((Number(it.price || 0) * Number(it.quantity || 1)))}</div>
+        <div class="small mono">Код товара: ${esc(it.product_code || it.product_id || "—")}</div>
+      </div>
+    `;
+  }).join("") || `<div class="small">Товары не найдены</div>`;
+
+  return `
+    <div><strong>Статус заказа:</strong> ${esc(trOrderStatus(o.status))}</div>
+    <div><strong>Статус оплаты:</strong> ${esc(trPaymentStatus(o.payment_status))}</div>
+    <div><strong>Итого:</strong> ${money(o.total)}</div>
+    <div><strong>Создан:</strong> ${esc(prettyDate(o.created_at))}</div>
+    <hr style="border:0;border-top:1px solid #eee;margin:10px 0;">
+    <div><strong>Клиент:</strong> ${esc(o.customer_name || "—")}</div>
+    <div><strong>Телефон:</strong> ${esc(o.customer_phone || "—")}</div>
+    <div><strong>Telegram username:</strong> ${esc(o.telegram_username || "—")}</div>
+    <div><strong>ID Telegram:</strong> ${esc(o.telegram_user_id || "—")}</div>
+    <hr style="border:0;border-top:1px solid #eee;margin:10px 0;">
+    <div><strong>Тип доставки:</strong> ${esc(o.delivery_type || "—")}</div>
+    <div><strong>Адрес:</strong> ${esc(o.delivery_address || "—")}</div>
+    <div><strong>Дата:</strong> ${esc(o.delivery_date || "—")}</div>
+    <div><strong>Время:</strong> ${esc(o.delivery_time || "—")}</div>
+    <div><strong>Способ связи:</strong> ${esc(o.contact_method || "—")}</div>
+    <div><strong>Получатель:</strong> ${esc(o.recipient_name || "—")}</div>
+    <div><strong>Телефон получателя:</strong> ${esc(o.recipient_phone || "—")}</div>
+    <div><strong>Комментарий курьеру:</strong> ${esc(o.courier_comment || "—")}</div>
+    <div><strong>Текст открытки:</strong> ${esc(o.card_text || "—")}</div>
+    <div><strong>Комментарий к заказу:</strong> ${esc(o.comment || "—")}</div>
+    <hr style="border:0;border-top:1px solid #eee;margin:10px 0;">
+    <div><strong>Товары</strong></div>
+    ${itemsHtml}
+  `;
 }
 
 window.openOrder = async function (orderId) {
   try {
     const o = await api(`/orders/${orderId}`);
     $("order-detail-title").textContent = `Заказ #${o.id}`;
-    $("order-detail-content").textContent = JSON.stringify(o, null, 2);
+    $("order-detail-content").innerHTML = renderOrderDetailHtml(o);
     $("orders-list").classList.add("hidden");
     $("order-detail").classList.remove("hidden");
     history.replaceState(null, "", `#order-${o.id}`);
@@ -234,13 +306,12 @@ async function loadMappings() {
 async function sendBroadcast() {
   const text = $("broadcast-text").value.trim();
   const dry_run = $("broadcast-dry").checked;
-  const limit = Number($("broadcast-limit").value || 200);
   if (!text) return setMsg("broadcast-msg", "Пустой текст");
   setMsg("broadcast-msg", "Запуск...");
   try {
     const data = await api("/admin/broadcast", {
       method: "POST",
-      body: JSON.stringify({ text, parse_mode: "HTML", dry_run, limit }),
+      body: JSON.stringify({ text, parse_mode: "HTML", dry_run }),
     });
     setMsg("broadcast-msg", JSON.stringify(data), true);
   } catch (e) {

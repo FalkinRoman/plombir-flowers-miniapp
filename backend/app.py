@@ -240,7 +240,7 @@ class AdminBroadcastRequest(BaseModel):
     text: str
     parse_mode: str = "HTML"
     dry_run: bool = True
-    limit: int = 200
+    limit: Optional[int] = None
 
 
 def _extract_bearer_token(request: Request) -> str:
@@ -880,7 +880,8 @@ async def admin_broadcast(request: Request, payload: AdminBroadcastRequest):
     text = (payload.text or "").strip()
     if not text:
         raise HTTPException(status_code=400, detail="Пустой текст")
-    users = list_order_telegram_users(limit=max(1, min(payload.limit, 20000)))
+    requested_limit = payload.limit if payload.limit is not None else 20000
+    users = list_order_telegram_users(limit=max(1, min(int(requested_limit), 20000)))
     sent = 0
     failed = 0
     sample = []
