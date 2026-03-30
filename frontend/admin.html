@@ -143,8 +143,7 @@
             <h3 style="margin-top:0;">Маппинг Tilda → МойСклад</h3>
             <div id="map-stats" class="map-stats-bar">…</div>
             <div class="wizard-bar" id="map-wizard-bar">
-                <button type="button" id="btn-feed-refresh" class="wizard-btn wizard-btn--active" title="Скачать свежий YML">Обновить фид</button>
-                <button type="button" id="btn-ms-refresh" class="wizard-btn wizard-btn--idle" title="Синхронизировать номенклатуру в локальный кэш">Обновить кэш МС</button>
+                <button type="button" id="btn-refresh-all" class="wizard-btn wizard-btn--idle" title="Скачать YML и обновить локальный кэш номенклатуры МС">Обновить фид и кэш МС</button>
             </div>
 
             <div class="map-grid">
@@ -156,7 +155,7 @@
                     </div>
                     <div id="feed-list-wrap" class="map-list-wrap">
                         <div class="map-list-loading" aria-hidden="true"><span class="map-spinner"></span>Загрузка…</div>
-                        <div id="feed-list" class="map-list"><div class="item small">Сверху: фид и кэш → «Показать».</div></div>
+                        <div id="feed-list" class="map-list"><div class="item small">«Показать» — список без маппинга.</div></div>
                     </div>
                 </div>
                 <div class="map-step">
@@ -173,7 +172,7 @@
             </div>
 
             <div class="map-bot-box">
-                <div class="map-col-title" style="margin-bottom:8px;">Связка (сохраняется в БД для заказов)</div>
+                <div class="map-col-title" style="margin-bottom:8px;">Связка</div>
                 <div class="row" style="flex-wrap:wrap;align-items:center;gap:8px;">
                     <input id="map-tilda-key" placeholder="tilda key" style="min-width:180px;">
                     <input id="map-ms-name" placeholder="Название МС" style="min-width:160px;">
@@ -184,20 +183,9 @@
                 </div>
             </div>
 
-            <details style="margin-top:10px;" class="small">
-                <summary style="cursor:pointer;font-weight:600;">Про ссылку «В МС» и поля связки</summary>
-                <div style="margin-top:8px;line-height:1.45;color:#374151;">
-                    Ссылка <strong>«В МС ↗»</strong> в правой колонке: если в API пришло <code>meta.uuidHref</code>, открываем его (как в JSON МойСклада) — так веб чаще ведёт на нужную карточку.
-                    Если <code>uuidHref</code> нет — строим URL из <code>meta.href</code> / <code>id</code>.
-                    В поля связки по-прежнему идут <code>ms href</code> и id с конца <strong>Remap API</strong> (<code>meta.href</code>), не uuidHref — заказы в МС создаются по API-ссылке.
-                    Достаточно <code>MOYSKLAD_TOKEN</code> на сервере; после «Обновить кэш МС» подтянется <code>uuidHref</code> в кэш.
-                </div>
-            </details>
+            <div id="map-msg" class="small map-msg-line" style="margin-top:8px;"></div>
 
-            <div id="map-msg" class="small" style="margin-top:8px;"></div>
-
-            <div class="map-col-title" style="margin-top:16px;">Сохранённые маппинги</div>
-            <p class="small" style="margin:4px 0 0;color:#64748b;">Таблица обновляется после «Сохранить» и «Удалить». Ссылка Tilda — из фида; «В МС» — из кэша uuidHref или сборка по API.</p>
+            <div class="map-col-title" style="margin-top:14px;">Сохранённые маппинги</div>
             <div class="mappings-table-wrap">
                 <table class="mappings-table" id="mappings-table">
                     <thead>
@@ -208,7 +196,7 @@
                             <th>МойСклад</th>
                             <th>В МС</th>
                             <th>API</th>
-                            <th>Обновлено</th>
+                            <th>Время</th>
                             <th class="cell-actions">Действия</th>
                         </tr>
                     </thead>
@@ -218,11 +206,11 @@
                 </table>
             </div>
 
-            <details style="margin-top:12px;">
-                <summary class="small" style="cursor:pointer;">Расширенные действия</summary>
+            <details style="margin-top:12px;" class="small">
+                <summary style="cursor:pointer;">Ещё</summary>
                 <div class="row" style="margin-top:8px;">
-                    <input id="map-delete-key" placeholder="tilda key для удаления (дублирует кнопку в таблице)">
-                    <button id="btn-map-delete" class="secondary">Удалить по key</button>
+                    <input id="map-delete-key" placeholder="tilda key">
+                    <button id="btn-map-delete" type="button" class="secondary">Удалить</button>
                     <button id="btn-map-list" type="button" class="secondary">Обновить таблицу</button>
                 </div>
             </details>
@@ -243,6 +231,6 @@
         </div>
     </div>
 </div>
-<script src="/app/static/admin.js?v=16"></script>
+<script src="/app/static/admin.js?v=17"></script>
 </body>
 </html>

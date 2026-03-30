@@ -53,21 +53,11 @@ let selectedFeedItem = null;
 let mapWizardPhase = 1;
 
 function updateMapWizardUI() {
-  const b1 = $("btn-feed-refresh");
-  const b2 = $("btn-ms-refresh");
-  if (!b1 || !b2) return;
-  [b1, b2].forEach((b) => b.classList.remove("wizard-btn--active", "wizard-btn--done", "wizard-btn--idle"));
-  const ph = mapWizardPhase;
-  if (ph <= 1) {
-    b1.classList.add("wizard-btn--active");
-    b2.classList.add("wizard-btn--idle");
-  } else if (ph === 2) {
-    b1.classList.add("wizard-btn--done");
-    b2.classList.add("wizard-btn--active");
-  } else {
-    b1.classList.add("wizard-btn--done");
-    b2.classList.add("wizard-btn--done");
-  }
+  const b = $("btn-refresh-all");
+  if (!b) return;
+  b.classList.remove("wizard-btn--active", "wizard-btn--done", "wizard-btn--idle");
+  if (mapWizardPhase >= 3) b.classList.add("wizard-btn--done");
+  else b.classList.add("wizard-btn--idle");
 }
 
 const EMPTY_MS =
@@ -131,7 +121,16 @@ async function api(path, opts = {}) {
 }
 
 function setAuthMsg(msg, ok = false) { $("auth-msg").textContent = msg; $("auth-msg").style.color = ok ? "#065f46" : "#b91c1c"; }
-function setMsg(id, msg, ok = false) { $(id).textContent = msg; $(id).style.color = ok ? "#065f46" : "#b91c1c"; }
+function setMsg(id, msg, ok = false) {
+  const el = $(id);
+  if (!el) return;
+  el.textContent = msg;
+  if (!String(msg || "").trim()) {
+    el.style.color = "#94a3b8";
+    return;
+  }
+  el.style.color = ok ? "#065f46" : "#b91c1c";
+}
 function trPaymentStatus(s) { return STATUS_PAYMENT_MAP[String(s || "").toLowerCase()] || String(s || "—"); }
 function trOrderStatus(s) { return STATUS_ORDER_MAP[String(s || "")] || String(s || "—"); }
 
@@ -321,11 +320,7 @@ async function loadMappingStats() {
   if (!el) return;
   try {
     const s = await api("/admin/mapping-stats");
-    const extra =
-      s.mappings_db_rows != null && Number(s.mappings_db_rows) !== Number(s.mapped_count)
-        ? ` · записей в таблице маппинга: ${s.mappings_db_rows}`
-        : "";
-    el.textContent = `Фид: ${s.feed_variants_total} · С маппингом: ${s.mapped_count} · Без: ${s.unmapped_count} · Кэш МС: ${s.ms_cache_rows}${extra}`;
+    el.textContent = `Фид: ${s.feed_variants_total} · С маппингом: ${s.mapped_count} · Без: ${s.unmapped_count} · Кэш МС: ${s.ms_cache_rows}`;
     el.style.color = "#374151";
   } catch (e) {
     el.textContent = `Счётчики: ${e.message}`;
@@ -333,21 +328,27 @@ async function loadMappingStats() {
   }
 }
 
-async function refreshFeed() {
-  setMsg("map-msg", "Качаю YML и обновляю фид…");
+/** Один запрос: фид YML + кэш номенклатуры МС; прелоадеры снимаются в finally. */
+async function refreshFeedAndMsCache() {
+  const btn = $("btn-refresh-all");
+  if (btn) btn.disabled = true;
+  setMsg("map-msg", "Обновляю фид и кэш МС…");
   setBothWrapLoading(true);
   try {
-    const data = await api("/admin/feed/refresh", { method: "POST" });
-    mapWizardPhase = 2;
+    const feedData = await api("/admin/feed/refresh", { method: "POST" });
+    const msData = await api("/admin/moysklad/cache/refresh", { method: "POST" });
+    mapWizardPhase = 3;
     updateMapWizardUI();
-    setMsg("map-msg", `Фид: ${data.products_count} товаров · дальше кэш МС`, true);
+    setMsg("map-msg", "", true);
     await loadFeedProducts({ skipFeedLoading: true });
-    toast(`Фид обновлён: ${data.products_count} товаров`, true);
+    await loadMappingStats();
+    toast(`Готово: фид ${feedData.products_count} товаров · кэш МС ${msData.count} поз.`, true);
   } catch (e) {
-    setMsg("map-msg", `Ошибка: ${e.message}`);
-    toast(`Фид: ${e.message}`, false);
+    setMsg("map-msg", String(e.message || e), false);
+    toast(String(e.message || e), false);
   } finally {
     setBothWrapLoading(false);
+    if (btn) btn.disabled = false;
   }
 }
 
@@ -442,24 +443,6 @@ async function searchMs(opts = {}) {
   }
 }
 
-async function refreshMsCache() {
-  setMsg("map-msg", "Обновляю кэш МС...");
-  setBothWrapLoading(true);
-  try {
-    const data = await api("/admin/moysklad/cache/refresh", { method: "POST" });
-    mapWizardPhase = 3;
-    updateMapWizardUI();
-    setMsg("map-msg", `Кэш МС: ${data.count} поз. · слева «Показать»`, true);
-    await loadMappingStats();
-    toast(`Кэш МС обновлён: ${data.count} позиций`, true);
-  } catch (e) {
-    setMsg("map-msg", `Ошибка: ${e.message}`);
-    toast(`Кэш МС: ${e.message}`, false);
-  } finally {
-    setBothWrapLoading(false);
-  }
-}
-
 async function saveMapping() {
   const href = $("map-ms-href").value.trim();
   const idFromHref = msIdFromRemapHref(href);
@@ -473,44 +456,56 @@ async function saveMapping() {
   };
   if (!payload.tilda_key || !payload.ms_href) {
     toast("Нужны tilda key и ms href", false);
-    return setMsg("map-msg", "Нужны tilda key и ms href");
+    return;
   }
   try {
     await api("/admin/mappings", { method: "POST", body: JSON.stringify(payload) });
     if (payload.ms_id) $("map-ms-id").value = payload.ms_id;
     toast("Связка сохранена", true);
-    setMsg("map-msg", "Сохранено — списки обновлены", true);
+    setMsg("map-msg", "", true);
     resetMappingUiAfterSave();
     await loadMappings();
     await loadFeedProducts();
     await loadMappingStats();
   } catch (e) {
     toast(`Не сохранено: ${e.message}`, false);
-    setMsg("map-msg", `Ошибка: ${e.message}`);
+    setMsg("map-msg", String(e.message || e), false);
+  }
+}
+
+function formatMappingTime(iso) {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return esc(String(iso));
+    return d.toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  } catch (_) {
+    return esc(String(iso));
   }
 }
 
 async function deleteMappingByKey(key) {
   const k = String(key || "").trim();
   if (!k) return;
+  if (!confirm(`Удалить связку для ключа «${k}»?`)) return;
   try {
     await api(`/admin/mappings/${encodeURIComponent(k)}`, { method: "DELETE" });
-    toast("Маппинг удалён", true);
-    setMsg("map-msg", "Удалено — таблица и списки обновлены", true);
+    toast("Удалено", true);
+    setMsg("map-msg", "", true);
     await loadMappings();
     await loadFeedProducts();
     await loadMappingStats();
   } catch (e) {
     toast(`Удаление: ${e.message}`, false);
-    setMsg("map-msg", `Ошибка: ${e.message}`);
+    setMsg("map-msg", String(e.message || e), false);
   }
 }
 
 async function deleteMapping() {
   const key = $("map-delete-key").value.trim();
   if (!key) {
-    toast("Введите tilda key", false);
-    return setMsg("map-msg", "Введите tilda key");
+    toast("Введите key", false);
+    return;
   }
   await deleteMappingByKey(key);
   $("map-delete-key").value = "";
@@ -544,7 +539,7 @@ function renderMappingTable(rows) {
         <td>${esc(r.ms_name || r.ms_id || "—")}</td>
         <td>${msWebCell}</td>
         <td class="mono">${href}</td>
-        <td class="small">${esc(r.updated_at || "")}<div style="color:#64748b;">${esc(r.updated_by || "")}</div></td>
+        <td class="small">${formatMappingTime(r.updated_at)}</td>
         <td class="cell-actions">
           <button type="button" class="secondary btn-table btn-del-mapping" data-key="${encodeURIComponent(keyRaw)}">Удалить</button>
         </td>
@@ -634,14 +629,15 @@ function bind() {
       })
       .catch((e) => setMsg("map-msg", e.message)),
   );
-  $("btn-feed-refresh").addEventListener("click", () => refreshFeed().catch((e) => setMsg("map-msg", e.message)));
-  $("btn-ms-search").addEventListener("click", () => searchMs().catch((e) => setMsg("map-msg", e.message)));
+  $("btn-refresh-all").addEventListener("click", () =>
+    refreshFeedAndMsCache().catch((e) => setMsg("map-msg", String(e.message || e), false)),
+  );
+  $("btn-ms-search").addEventListener("click", () => searchMs().catch((e) => setMsg("map-msg", String(e.message || e), false)));
   let msSearchTimer = null;
   $("ms-q").addEventListener("input", () => {
     clearTimeout(msSearchTimer);
     msSearchTimer = setTimeout(() => searchMs().catch((e) => setMsg("map-msg", e.message)), 380);
   });
-  $("btn-ms-refresh").addEventListener("click", refreshMsCache);
   $("btn-map-save").addEventListener("click", saveMapping);
   $("btn-map-clear").addEventListener("click", clearMappingForm);
   $("btn-map-delete").addEventListener("click", deleteMapping);
