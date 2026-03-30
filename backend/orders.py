@@ -630,9 +630,9 @@ def replace_ms_assortment_cache(rows: list[dict]):
 def ms_online_web_url(ms_href: str, ms_type: str, ms_id: str, ms_product_id: str = "") -> str:
     """
     Ссылка на карточку в веб-интерфейсе МойСклада (не API href).
-    У модификации в #good/edit?id= часто нужен uuid родительского товара — тот же, что
-    в списке «Товары»; uuid модификации (ms_id) в id= открывает другую карточку.
-    Если в кэше есть ms_product_id (expand=product при обновлении) — используем его.
+    Модификация: один только id=variant или только id=product даёт у части аккаунтов
+    «товар не найден» — веб ожидает пару родитель + модификация в query.
+    При наличии ms_product_id (expand=product в кэше): id=<product>&variantId=<variant>.
     """
     mid = (ms_id or "").strip()
     if not mid:
@@ -644,7 +644,7 @@ def ms_online_web_url(ms_href: str, ms_type: str, ms_id: str, ms_product_id: str
     # Надёжнее всего — сегмент entity/... в API href из кэша
     if "/entity/variant/" in href or tid == "variant":
         if pid:
-            return f"{base}good/edit?id={pid}"
+            return f"{base}good/edit?id={pid}&variantId={mid}"
         return f"{base}good/edit?id={mid}"
     if "/entity/service/" in href or tid == "service":
         return f"{base}service/edit?id={mid}"
