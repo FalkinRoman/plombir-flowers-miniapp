@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -33,6 +34,10 @@ from backend.config import (
     YANDEX_PAY_SDK_URL,
     YANDEX_PAY_MERCHANT_ID,
     YANDEX_PAY_THEME,
+    MOYSKLAD_TOKEN,
+    ADMIN_BOOTSTRAP_EMAIL,
+    ADMIN_BOOTSTRAP_PASSWORD,
+    ADMIN_SESSION_TTL_SECONDS,
 )
 from backend.parser import fetch_and_parse
 from backend.orders import (
@@ -44,6 +49,17 @@ from backend.orders import (
     update_order_status,
     update_order_moysklad,
     list_recent_orders,
+    authenticate_admin,
+    create_admin_session,
+    get_admin_by_session,
+    delete_admin_session,
+    create_or_update_admin_user,
+    list_product_mappings,
+    upsert_product_mapping,
+    delete_product_mapping,
+    replace_ms_assortment_cache,
+    search_ms_assortment_cache,
+    list_order_telegram_users,
 )
 from backend.payments import create_payment, is_yookassa_ready, PaymentConfigError
 from backend.moysklad import create_customerorder, is_moysklad_ready, moysklad_not_ready_reason
@@ -132,6 +148,19 @@ async def lifespan(app: FastAPI):
     logging.getLogger("plombir").setLevel(logging.INFO)
     logging.getLogger("plombir.moysklad").setLevel(logging.INFO)
     init_db()
+    if (ADMIN_BOOTSTRAP_PASSWORD or "").strip():
+        try:
+            create_or_update_admin_user(
+                email=ADMIN_BOOTSTRAP_EMAIL,
+                password=ADMIN_BOOTSTRAP_PASSWORD,
+                role="admin",
+                is_active=True,
+            )
+            log.info("Admin bootstrap checked for %s", ADMIN_BOOTSTRAP_EMAIL)
+        except Exception as e:
+            log.warning("Admin bootstrap failed: %s", e)
+    else:
+        log.warning("ADMIN_BOOTSTRAP_PASSWORD не задан — вход в админку отключен до создания пользователя.")
     ensure_ui_storage()
     await refresh_feed()
     task = asyncio.create_task(scheduler())
@@ -191,6 +220,42 @@ class OrderCreate(BaseModel):
 
 class OrderStatusUpdate(BaseModel):
     status: str
+
+
+class AdminLoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class AdminMappingUpsertRequest(BaseModel):
+    tilda_key: str
+    ms_href: str
+    ms_type: str = "assortment"
+    ms_id: Optional[str] = None
+    ms_name: Optional[str] = None
+    note: Optional[str] = None
+
+
+class AdminBroadcastRequest(BaseModel):
+    text: str
+    parse_mode: str = "HTML"
+    dry_run: bool = True
+    limit: int = 200
+
+
+def _extract_bearer_token(request: Request) -> str:
+    auth = request.headers.get("Authorization", "")
+    if not auth.lower().startswith("bearer "):
+        return ""
+    return auth[7:].strip()
+
+
+def _require_admin(request: Request) -> dict:
+    token = _extract_bearer_token(request)
+    admin = get_admin_by_session(token)
+    if not admin:
+        raise HTTPException(status_code=401, detail="Admin auth required")
+    return admin
 
 
 # ── API endpoints ──
@@ -650,9 +715,191 @@ async def get_user_orders(telegram_user_id: str):
 
 
 @app.get("/api/admin/orders")
-async def admin_list_orders(limit: int = 30):
+async def admin_list_orders(request: Request, limit: int = 30):
     """Список последних заказов для админских инструментов."""
+    _require_admin(request)
     return list_recent_orders(limit=limit)
+
+
+@app.post("/api/admin/auth/login")
+async def admin_auth_login(payload: AdminLoginRequest):
+    user = authenticate_admin(payload.email, payload.password)
+    if not user:
+        raise HTTPException(status_code=401, detail="Неверный email или пароль")
+    token = create_admin_session(user["id"], ttl_seconds=ADMIN_SESSION_TTL_SECONDS)
+    return {"ok": True, "token": token, "user": user, "ttl": ADMIN_SESSION_TTL_SECONDS}
+
+
+@app.post("/api/admin/auth/logout")
+async def admin_auth_logout(request: Request):
+    admin = _require_admin(request)
+    delete_admin_session(admin.get("token") or "")
+    return {"ok": True}
+
+
+@app.get("/api/admin/auth/me")
+async def admin_auth_me(request: Request):
+    admin = _require_admin(request)
+    return {"ok": True, "user": {"id": admin["id"], "email": admin["email"], "role": admin["role"]}}
+
+
+@app.get("/api/admin/mappings")
+async def admin_mappings_list(request: Request, limit: int = 300, q: str = ""):
+    _require_admin(request)
+    return list_product_mappings(limit=limit, search=q)
+
+
+@app.post("/api/admin/mappings")
+async def admin_mappings_upsert(request: Request, payload: AdminMappingUpsertRequest):
+    admin = _require_admin(request)
+    try:
+        upsert_product_mapping(
+            tilda_key=payload.tilda_key,
+            ms_href=payload.ms_href,
+            ms_type=payload.ms_type,
+            ms_id=payload.ms_id,
+            ms_name=payload.ms_name,
+            note=payload.note,
+            updated_by=admin["email"],
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True}
+
+
+@app.delete("/api/admin/mappings/{tilda_key}")
+async def admin_mappings_delete(request: Request, tilda_key: str):
+    _require_admin(request)
+    delete_product_mapping(tilda_key)
+    return {"ok": True}
+
+
+@app.get("/api/admin/feed-products")
+async def admin_feed_products(
+    request: Request,
+    q: str = "",
+    limit: int = 300,
+    unmapped_only: bool = False,
+):
+    _require_admin(request)
+    lim = max(1, min(limit, 2000))
+    needle = (q or "").strip().lower()
+    mappings = {m.get("tilda_key"): m for m in list_product_mappings(limit=5000)}
+    rows = []
+    for p in _cache["products"]:
+        variants = p.get("variants") or []
+        if variants:
+            for v in variants:
+                key = str(v.get("code") or v.get("id") or "").strip()
+                if not key:
+                    continue
+                name = f"{p.get('name')} - {v.get('label') or ''}".strip()
+                mapped = mappings.get(key)
+                if unmapped_only and mapped:
+                    continue
+                if needle and needle not in name.lower() and needle not in key.lower():
+                    continue
+                rows.append({
+                    "name": name,
+                    "tilda_key": key,
+                    "base_product_id": p.get("id"),
+                    "mapped": bool(mapped),
+                    "mapping": mapped,
+                })
+        else:
+            key = str(p.get("code") or p.get("id") or "").strip()
+            if not key:
+                continue
+            mapped = mappings.get(key)
+            if unmapped_only and mapped:
+                continue
+            name = str(p.get("name") or "")
+            if needle and needle not in name.lower() and needle not in key.lower():
+                continue
+            rows.append({
+                "name": name,
+                "tilda_key": key,
+                "base_product_id": p.get("id"),
+                "mapped": bool(mapped),
+                "mapping": mapped,
+            })
+        if len(rows) >= lim:
+            break
+    return rows
+
+
+@app.post("/api/admin/moysklad/cache/refresh")
+async def admin_refresh_moysklad_cache(request: Request):
+    _require_admin(request)
+    if not (MOYSKLAD_TOKEN or "").strip():
+        raise HTTPException(status_code=400, detail="MOYSKLAD_TOKEN пуст")
+    import httpx
+
+    headers = {
+        "Authorization": f"Bearer {MOYSKLAD_TOKEN}",
+        "Accept": "application/json;charset=utf-8",
+    }
+    rows: list[dict] = []
+    offset = 0
+    limit = 1000
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        while True:
+            url = f"https://api.moysklad.ru/api/remap/1.2/entity/assortment?limit={limit}&offset={offset}"
+            resp = await client.get(url, headers=headers)
+            if resp.status_code >= 400:
+                raise HTTPException(status_code=502, detail=f"MoySklad HTTP {resp.status_code}")
+            data = resp.json() or {}
+            chunk = data.get("rows") or []
+            for r in chunk:
+                meta = (r or {}).get("meta") or {}
+                rows.append({
+                    "ms_id": str((r or {}).get("id") or ""),
+                    "ms_href": str(meta.get("href") or ""),
+                    "ms_type": str(meta.get("type") or "assortment"),
+                    "name": str((r or {}).get("name") or ""),
+                    "code": str((r or {}).get("code") or ""),
+                    "external_code": str((r or {}).get("externalCode") or ""),
+                    "archived": bool((r or {}).get("archived")),
+                })
+            if len(chunk) < limit:
+                break
+            offset += limit
+    replace_ms_assortment_cache(rows)
+    return {"ok": True, "count": len(rows)}
+
+
+@app.get("/api/admin/moysklad/cache/search")
+async def admin_search_moysklad_cache(request: Request, q: str = "", limit: int = 100):
+    _require_admin(request)
+    return search_ms_assortment_cache(query=q, limit=limit)
+
+
+@app.post("/api/admin/broadcast")
+async def admin_broadcast(request: Request, payload: AdminBroadcastRequest):
+    _require_admin(request)
+    text = (payload.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Пустой текст")
+    users = list_order_telegram_users(limit=max(1, min(payload.limit, 20000)))
+    sent = 0
+    failed = 0
+    sample = []
+    for row in users:
+        chat_id = str(row.get("telegram_user_id") or "").strip()
+        if not chat_id:
+            continue
+        if payload.dry_run:
+            if len(sample) < 20:
+                sample.append(chat_id)
+            continue
+        ok = await _telegram_send_message(chat_id, text, parse_mode=payload.parse_mode or "HTML")
+        if ok:
+            sent += 1
+        else:
+            failed += 1
+    if payload.dry_run:
+        return {"ok": True, "mode": "dry_run", "targets": len(users), "sample_ids": sample}
+    return {"ok": True, "mode": "send", "targets": len(users), "sent": sent, "failed": failed}
 
 
 @app.post("/api/orders/{order_id}/status")
@@ -881,3 +1128,8 @@ app.mount("/app", StaticFiles(directory=str(_FRONTEND_DIR), html=True), name="fr
 @app.get("/")
 async def root():
     return {"message": "Plombir Flowers API", "docs": "/docs", "app": "/app"}
+
+
+@app.get("/admin")
+async def admin_root():
+    return RedirectResponse(url="/app/admin.html")

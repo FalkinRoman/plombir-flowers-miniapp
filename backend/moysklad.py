@@ -516,6 +516,17 @@ async def _resolve_assortment_meta(
     name: str,
     price: float,
 ) -> Optional[dict[str, Any]]:
+    # Приоритет ручного маппинга из админки: Tilda key -> конкретный assortment/product в МС.
+    try:
+        from backend.orders import get_product_mapping_meta
+
+        mapped = get_product_mapping_meta(code, product_id)
+        if mapped:
+            return mapped
+    except Exception:
+        # Маппинг не должен ронять создание заказа.
+        pass
+
     for candidate in _expand_assortment_lookup_candidates(code, product_id):
         meta = await _find_assortment_meta_by_code(client, candidate)
         if meta:

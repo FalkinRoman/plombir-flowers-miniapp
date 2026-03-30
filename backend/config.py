@@ -50,6 +50,11 @@ def _float_env(name: str, default: float) -> float:
         return default
 
 
+ADMIN_BOOTSTRAP_EMAIL = os.getenv("ADMIN_BOOTSTRAP_EMAIL", "admin@app-plombirflowers.ru")
+ADMIN_BOOTSTRAP_PASSWORD = os.getenv("ADMIN_BOOTSTRAP_PASSWORD", "")
+ADMIN_SESSION_TTL_SECONDS = _int_env("ADMIN_SESSION_TTL_SECONDS", default=86400)
+
+
 # Интеграции (этап 3)
 YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID", "")
 YOOKASSA_SECRET_KEY = os.getenv("YOOKASSA_SECRET_KEY", "")

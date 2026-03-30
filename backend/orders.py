@@ -5,6 +5,8 @@ import sqlite3
 import json
 import datetime
 import os
+import hashlib
+import secrets
 from typing import Optional, List
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "orders.db")
@@ -58,6 +60,52 @@ def init_db():
             moysklad_order_id TEXT,
             moysklad_sync_error TEXT,
             created_at TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS admin_users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            password_salt TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'admin',
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS admin_sessions (
+            token TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            expires_at TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES admin_users(id) ON DELETE CASCADE
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS product_mappings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tilda_key TEXT NOT NULL UNIQUE,
+            ms_href TEXT NOT NULL,
+            ms_type TEXT NOT NULL DEFAULT 'assortment',
+            ms_id TEXT,
+            ms_name TEXT,
+            note TEXT,
+            updated_by TEXT,
+            updated_at TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS ms_assortment_cache (
+            ms_id TEXT PRIMARY KEY,
+            ms_href TEXT NOT NULL,
+            ms_type TEXT NOT NULL,
+            name TEXT,
+            code TEXT,
+            external_code TEXT,
+            archived INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL
         )
     """)
     _migrate_orders_schema(conn)
@@ -253,3 +301,343 @@ def _row_to_dict(row) -> dict:
     d = dict(row)
     d["items"] = json.loads(d["items"])
     return d
+
+
+def _now_iso() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
+def _hash_password(password: str, salt: str) -> str:
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        (password or "").encode("utf-8"),
+        salt.encode("utf-8"),
+        120000,
+    )
+    return digest.hex()
+
+
+def create_or_update_admin_user(*, email: str, password: str, role: str = "admin", is_active: bool = True):
+    email_n = (email or "").strip().lower()
+    if not email_n:
+        raise ValueError("email required")
+    if role not in {"superadmin", "admin", "manager"}:
+        role = "admin"
+    if len(password or "") < 8:
+        raise ValueError("password too short")
+
+    conn = _get_conn()
+    now = _now_iso()
+    salt = secrets.token_hex(16)
+    password_hash = _hash_password(password, salt)
+    existing = conn.execute("SELECT id FROM admin_users WHERE email = ?", (email_n,)).fetchone()
+    if existing:
+        conn.execute(
+            """
+            UPDATE admin_users
+               SET password_hash = ?, password_salt = ?, role = ?, is_active = ?, updated_at = ?
+             WHERE id = ?
+            """,
+            (password_hash, salt, role, 1 if is_active else 0, now, int(existing["id"])),
+        )
+    else:
+        conn.execute(
+            """
+            INSERT INTO admin_users (email, password_hash, password_salt, role, is_active, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (email_n, password_hash, salt, role, 1 if is_active else 0, now, now),
+        )
+    conn.commit()
+    conn.close()
+
+
+def ensure_superadmin(*, email: str, password: str):
+    conn = _get_conn()
+    has_superadmin = conn.execute(
+        "SELECT id FROM admin_users WHERE role = 'superadmin' AND is_active = 1 LIMIT 1"
+    ).fetchone()
+    conn.close()
+    if has_superadmin:
+        return
+    create_or_update_admin_user(email=email, password=password, role="superadmin", is_active=True)
+
+
+def authenticate_admin(email: str, password: str) -> Optional[dict]:
+    email_n = (email or "").strip().lower()
+    conn = _get_conn()
+    row = conn.execute(
+        """
+        SELECT id, email, password_hash, password_salt, role, is_active
+          FROM admin_users
+         WHERE email = ?
+         LIMIT 1
+        """,
+        (email_n,),
+    ).fetchone()
+    conn.close()
+    if not row or int(row["is_active"] or 0) != 1:
+        return None
+    check = _hash_password(password or "", str(row["password_salt"]))
+    if check != str(row["password_hash"]):
+        return None
+    return {
+        "id": int(row["id"]),
+        "email": str(row["email"]),
+        "role": str(row["role"] or "admin"),
+    }
+
+
+def create_admin_session(user_id: int, ttl_seconds: int = 86400) -> str:
+    token = secrets.token_urlsafe(32)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    expires_at = (now + datetime.timedelta(seconds=max(60, int(ttl_seconds)))).isoformat()
+    conn = _get_conn()
+    conn.execute(
+        "INSERT INTO admin_sessions (token, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)",
+        (token, int(user_id), expires_at, now.isoformat()),
+    )
+    conn.commit()
+    conn.close()
+    return token
+
+
+def get_admin_by_session(token: str) -> Optional[dict]:
+    t = (token or "").strip()
+    if not t:
+        return None
+    conn = _get_conn()
+    row = conn.execute(
+        """
+        SELECT s.token, s.expires_at, u.id, u.email, u.role, u.is_active
+          FROM admin_sessions s
+          JOIN admin_users u ON u.id = s.user_id
+         WHERE s.token = ?
+         LIMIT 1
+        """,
+        (t,),
+    ).fetchone()
+    if not row:
+        conn.close()
+        return None
+    try:
+        exp = datetime.datetime.fromisoformat(str(row["expires_at"]))
+    except ValueError:
+        exp = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=1)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if exp <= now or int(row["is_active"] or 0) != 1:
+        conn.execute("DELETE FROM admin_sessions WHERE token = ?", (t,))
+        conn.commit()
+        conn.close()
+        return None
+    conn.close()
+    return {
+        "id": int(row["id"]),
+        "email": str(row["email"]),
+        "role": str(row["role"] or "admin"),
+        "token": t,
+    }
+
+
+def delete_admin_session(token: str):
+    conn = _get_conn()
+    conn.execute("DELETE FROM admin_sessions WHERE token = ?", ((token or "").strip(),))
+    conn.commit()
+    conn.close()
+
+
+def list_admin_users() -> list[dict]:
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT id, email, role, is_active, created_at, updated_at FROM admin_users ORDER BY id ASC"
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def upsert_product_mapping(
+    *,
+    tilda_key: str,
+    ms_href: str,
+    ms_type: str = "assortment",
+    ms_id: Optional[str] = None,
+    ms_name: Optional[str] = None,
+    note: Optional[str] = None,
+    updated_by: Optional[str] = None,
+):
+    key = (tilda_key or "").strip()
+    if not key:
+        raise ValueError("tilda_key required")
+    href = (ms_href or "").strip()
+    if not href:
+        raise ValueError("ms_href required")
+    t = (ms_type or "assortment").strip()
+    now = _now_iso()
+    conn = _get_conn()
+    conn.execute(
+        """
+        INSERT INTO product_mappings (tilda_key, ms_href, ms_type, ms_id, ms_name, note, updated_by, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(tilda_key) DO UPDATE SET
+            ms_href = excluded.ms_href,
+            ms_type = excluded.ms_type,
+            ms_id = excluded.ms_id,
+            ms_name = excluded.ms_name,
+            note = excluded.note,
+            updated_by = excluded.updated_by,
+            updated_at = excluded.updated_at
+        """,
+        (
+            key,
+            href,
+            t,
+            (ms_id or "").strip() or None,
+            (ms_name or "").strip() or None,
+            (note or "").strip() or None,
+            (updated_by or "").strip() or None,
+            now,
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_product_mapping_meta(*keys: str) -> Optional[dict]:
+    prepared = [str(k or "").strip() for k in keys if str(k or "").strip()]
+    if not prepared:
+        return None
+    conn = _get_conn()
+    placeholders = ",".join(["?"] * len(prepared))
+    row = conn.execute(
+        f"""
+        SELECT tilda_key, ms_href, ms_type, ms_id, ms_name, updated_at
+          FROM product_mappings
+         WHERE tilda_key IN ({placeholders})
+         ORDER BY updated_at DESC
+         LIMIT 1
+        """,
+        tuple(prepared),
+    ).fetchone()
+    conn.close()
+    if not row:
+        return None
+    href = str(row["ms_href"] or "").strip()
+    mtype = str(row["ms_type"] or "assortment").strip()
+    if not href:
+        return None
+    return {
+        "href": href,
+        "type": mtype,
+        "mediaType": "application/json",
+        "mapping_key": str(row["tilda_key"]),
+        "mapping_ms_name": str(row["ms_name"] or ""),
+    }
+
+
+def list_product_mappings(limit: int = 500, search: str = "") -> list[dict]:
+    lim = max(1, min(int(limit), 5000))
+    q = f"%{(search or '').strip().lower()}%"
+    conn = _get_conn()
+    if q == "%%":
+        rows = conn.execute(
+            """
+            SELECT id, tilda_key, ms_href, ms_type, ms_id, ms_name, note, updated_by, updated_at
+              FROM product_mappings
+             ORDER BY updated_at DESC
+             LIMIT ?
+            """,
+            (lim,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """
+            SELECT id, tilda_key, ms_href, ms_type, ms_id, ms_name, note, updated_by, updated_at
+              FROM product_mappings
+             WHERE lower(tilda_key) LIKE ? OR lower(coalesce(ms_name, '')) LIKE ? OR lower(coalesce(ms_id, '')) LIKE ?
+             ORDER BY updated_at DESC
+             LIMIT ?
+            """,
+            (q, q, q, lim),
+        ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def delete_product_mapping(tilda_key: str):
+    conn = _get_conn()
+    conn.execute("DELETE FROM product_mappings WHERE tilda_key = ?", ((tilda_key or "").strip(),))
+    conn.commit()
+    conn.close()
+
+
+def replace_ms_assortment_cache(rows: list[dict]):
+    now = _now_iso()
+    conn = _get_conn()
+    conn.execute("DELETE FROM ms_assortment_cache")
+    for row in rows:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO ms_assortment_cache
+            (ms_id, ms_href, ms_type, name, code, external_code, archived, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                (row.get("ms_id") or "").strip(),
+                (row.get("ms_href") or "").strip(),
+                (row.get("ms_type") or "assortment").strip(),
+                (row.get("name") or "").strip(),
+                (row.get("code") or "").strip(),
+                (row.get("external_code") or "").strip(),
+                1 if bool(row.get("archived")) else 0,
+                now,
+            ),
+        )
+    conn.commit()
+    conn.close()
+
+
+def search_ms_assortment_cache(query: str = "", limit: int = 200) -> list[dict]:
+    lim = max(1, min(int(limit), 1000))
+    q = f"%{(query or '').strip().lower()}%"
+    conn = _get_conn()
+    if q == "%%":
+        rows = conn.execute(
+            """
+            SELECT ms_id, ms_href, ms_type, name, code, external_code, archived, updated_at
+              FROM ms_assortment_cache
+             ORDER BY name COLLATE NOCASE ASC
+             LIMIT ?
+            """,
+            (lim,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """
+            SELECT ms_id, ms_href, ms_type, name, code, external_code, archived, updated_at
+              FROM ms_assortment_cache
+             WHERE lower(name) LIKE ? OR lower(code) LIKE ? OR lower(external_code) LIKE ? OR lower(ms_id) LIKE ?
+             ORDER BY name COLLATE NOCASE ASC
+             LIMIT ?
+            """,
+            (q, q, q, q, lim),
+        ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def list_order_telegram_users(limit: int = 5000) -> list[dict]:
+    lim = max(1, min(int(limit), 20000))
+    conn = _get_conn()
+    rows = conn.execute(
+        """
+        SELECT telegram_user_id, max(customer_name) as customer_name, max(telegram_username) as telegram_username
+          FROM orders
+         WHERE trim(coalesce(telegram_user_id, '')) <> ''
+         GROUP BY telegram_user_id
+         ORDER BY max(id) DESC
+         LIMIT ?
+        """,
+        (lim,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]

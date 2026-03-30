@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plombir Admin</title>
+    <style>
+        :root { color-scheme: light; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; background: #f6f7f9; color: #111; }
+        .wrap { max-width: 1200px; margin: 0 auto; padding: 16px; }
+        .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px; margin-bottom: 12px; }
+        .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+        input, select, textarea, button { font-size: 14px; padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 8px; }
+        input, select, textarea { background: #fff; }
+        button { cursor: pointer; background: #111; color: #fff; border-color: #111; }
+        button.secondary { background: #fff; color: #111; }
+        button:disabled { opacity: 0.6; cursor: not-allowed; }
+        .tabs { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+        .tab { background: #fff; color: #111; border: 1px solid #d1d5db; }
+        .tab.active { background: #111; color: #fff; border-color: #111; }
+        .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+        .small { font-size: 12px; color: #555; }
+        .list { max-height: 380px; overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px; }
+        .item { padding: 8px; border-bottom: 1px solid #f0f0f0; }
+        .item:last-child { border-bottom: none; }
+        .hidden { display: none !important; }
+        @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <div id="auth-card" class="card">
+        <h2 style="margin-top:0;">Вход в админку</h2>
+        <div class="row">
+            <input id="login-email" type="email" placeholder="email" style="min-width:260px;">
+            <input id="login-password" type="password" placeholder="password" style="min-width:220px;">
+            <button id="btn-login">Войти</button>
+        </div>
+        <div id="auth-msg" class="small" style="margin-top:8px;"></div>
+    </div>
+
+    <div id="app-card" class="hidden">
+        <div class="card">
+            <div class="row" style="justify-content:space-between;">
+                <div>
+                    <strong>Plombir Admin</strong>
+                    <span id="me" class="small"></span>
+                </div>
+                <button id="btn-logout" class="secondary">Выйти</button>
+            </div>
+            <div class="tabs" id="tabs">
+                <button class="tab active" data-tab="orders">Заказы</button>
+                <button class="tab" data-tab="mapping">Маппинг Tilda→МС</button>
+                <button class="tab" data-tab="broadcast">Рассылка</button>
+            </div>
+        </div>
+
+        <div id="tab-orders" class="card">
+            <h3 style="margin-top:0;">Последние заказы</h3>
+            <div class="row">
+                <button id="btn-orders-refresh" class="secondary">Обновить</button>
+            </div>
+            <div id="orders-list" class="list"></div>
+        </div>
+
+        <div id="tab-mapping" class="card hidden">
+            <h3 style="margin-top:0;">Маппинг товаров</h3>
+            <div class="row">
+                <button id="btn-ms-refresh">Обновить кэш МС</button>
+                <input id="feed-q" placeholder="поиск в фиде">
+                <button id="btn-feed-load" class="secondary">Показать фид</button>
+                <input id="ms-q" placeholder="поиск в кэше МС">
+                <button id="btn-ms-search" class="secondary">Искать МС</button>
+            </div>
+            <div class="grid2" style="margin-top:10px;">
+                <div>
+                    <div class="small">Товары из фида</div>
+                    <div id="feed-list" class="list"></div>
+                </div>
+                <div>
+                    <div class="small">Кэш ассортимента МойСклад</div>
+                    <div id="ms-list" class="list"></div>
+                </div>
+            </div>
+            <div class="row" style="margin-top:10px;">
+                <input id="map-tilda-key" placeholder="tilda key" style="min-width:220px;">
+                <input id="map-ms-href" placeholder="ms href" style="min-width:340px;">
+                <input id="map-ms-id" placeholder="ms id">
+                <input id="map-ms-name" placeholder="ms name">
+                <button id="btn-map-save">Сохранить маппинг</button>
+            </div>
+            <div class="row" style="margin-top:8px;">
+                <input id="map-delete-key" placeholder="tilda key для удаления">
+                <button id="btn-map-delete" class="secondary">Удалить маппинг</button>
+                <button id="btn-map-list" class="secondary">Показать маппинги</button>
+            </div>
+            <div id="map-msg" class="small" style="margin-top:8px;"></div>
+            <div id="mapping-list" class="list" style="margin-top:8px;"></div>
+        </div>
+
+        <div id="tab-broadcast" class="card hidden">
+            <h3 style="margin-top:0;">Рассылка в боте</h3>
+            <textarea id="broadcast-text" rows="5" style="width:100%;" placeholder="Текст рассылки (HTML)"></textarea>
+            <div class="row" style="margin-top:8px;">
+                <label class="small"><input id="broadcast-dry" type="checkbox" checked> dry-run</label>
+                <input id="broadcast-limit" type="number" value="200" min="1" max="20000" style="width:120px;">
+                <button id="btn-broadcast">Запустить рассылку</button>
+            </div>
+            <div id="broadcast-msg" class="small" style="margin-top:8px;"></div>
+        </div>
+    </div>
+</div>
+<script src="/app/static/admin.js?v=1"></script>
+</body>
+</html>
