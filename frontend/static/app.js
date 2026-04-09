@@ -692,6 +692,7 @@ function onCategoryClick(btn) {
     btn.classList.add('active');
     state.categoryId = btn.dataset.id;
     state.offset = 0;
+    clearCatalogSearchSnapshot();
     // Сбрасываем поиск при выборе категории
     if (state.search) {
         state.search = '';
@@ -709,6 +710,7 @@ function setupPriceFilter() {
             state.priceMin = btn.dataset.min ? parseFloat(btn.dataset.min) : null;
             state.priceMax = btn.dataset.max ? parseFloat(btn.dataset.max) : null;
             state.offset = 0;
+            clearCatalogSearchSnapshot();
             // Сбрасываем поиск при выборе цены
             if (state.search) {
                 state.search = '';
@@ -2408,24 +2410,80 @@ function showToast(message) {
 }
 
 // ── Search ──
+/** Снимок категории и цены до режима поиска — восстанавливаем при очистке строки. */
+let _catalogBeforeSearch = null;
 let searchTimeout;
+
+function clearCatalogSearchSnapshot() {
+    _catalogBeforeSearch = null;
+}
+
+function syncCategoryButtonsFromState() {
+    $categories.querySelectorAll('.category-btn').forEach(b => b.classList.remove('active'));
+    const id = state.categoryId || '';
+    let btn = null;
+    if (id) {
+        try {
+            btn = $categories.querySelector(`.category-btn[data-id="${CSS.escape(id)}"]`);
+        } catch (_) {
+            btn = null;
+        }
+    } else {
+        btn = $categories.querySelector('.category-btn[data-id=""]');
+    }
+    if (!btn) {
+        btn = $categories.querySelector('.category-btn');
+        if (btn) state.categoryId = btn.dataset.id || '';
+    }
+    if (btn) btn.classList.add('active');
+}
+
+function syncPriceButtonsFromState() {
+    document.querySelectorAll('.price-btn').forEach(b => b.classList.remove('active'));
+    let match = null;
+    document.querySelectorAll('.price-btn').forEach(btn => {
+        const bmin = btn.dataset.min === '' ? null : parseFloat(btn.dataset.min);
+        const bmax = btn.dataset.max === '' ? null : parseFloat(btn.dataset.max);
+        if (Object.is(bmin, state.priceMin) && Object.is(bmax, state.priceMax)) {
+            match = btn;
+        }
+    });
+    const fallback = document.querySelector('.price-btn[data-min=""]');
+    (match || fallback)?.classList.add('active');
+}
+
 $search.addEventListener('input', (e) => {
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => {
         const q = e.target.value.trim();
-        state.search = q;
-        // При поиске сбрасываем категорию и ценовой фильтр
         if (q) {
+            if (_catalogBeforeSearch === null) {
+                _catalogBeforeSearch = {
+                    categoryId: state.categoryId,
+                    priceMin: state.priceMin,
+                    priceMax: state.priceMax,
+                };
+            }
+            state.search = q;
             state.categoryId = '';
             state.priceMin = null;
             state.priceMax = null;
-            // Визуально сбрасываем активные кнопки
             $categories.querySelectorAll('.category-btn').forEach(b => b.classList.remove('active'));
             const allBtn = $categories.querySelector('[data-id=""]');
             if (allBtn) allBtn.classList.add('active');
             document.querySelectorAll('.price-btn').forEach(b => b.classList.remove('active'));
             const allPriceBtn = document.querySelector('.price-btn[data-min=""]');
             if (allPriceBtn) allPriceBtn.classList.add('active');
+        } else {
+            state.search = '';
+            if (_catalogBeforeSearch) {
+                state.categoryId = _catalogBeforeSearch.categoryId;
+                state.priceMin = _catalogBeforeSearch.priceMin;
+                state.priceMax = _catalogBeforeSearch.priceMax;
+                clearCatalogSearchSnapshot();
+                syncCategoryButtonsFromState();
+                syncPriceButtonsFromState();
+            }
         }
         loadProducts(true);
     }, 400);
