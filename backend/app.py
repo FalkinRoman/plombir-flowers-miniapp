@@ -337,6 +337,12 @@ async def integrations_public_config():
         "payments": {
             "yookassa_enabled": bool(YOOKASSA_ENABLED and is_yookassa_ready()),
             "yandex_checkout_enabled": bool(is_yandex_checkout_ready()),
+            # Карта только ЮKassa; сплит — Яндекс Merchant API если есть ключ, иначе ЮKassa.
+            "card_checkout_enabled": bool(YOOKASSA_ENABLED and is_yookassa_ready()),
+            "split_checkout_enabled": bool(
+                is_yandex_checkout_ready() or (YOOKASSA_ENABLED and is_yookassa_ready())
+            )
+            and bool(SPLIT_ENABLED and YANDEX_PAY_MERCHANT_ID),
             # Виджеты/badge: merchant id; оплата — Yandex Merchant API и/или ЮKassa.
             "split_enabled": bool(SPLIT_ENABLED and YANDEX_PAY_MERCHANT_ID),
             "split_months_default": SPLIT_MONTHS_DEFAULT,
@@ -590,20 +596,30 @@ async def create_new_order(order: OrderCreate):
     if payment_method in {"card", "split"}:
         yandex_ok = is_yandex_checkout_ready()
         yk_ok = YOOKASSA_ENABLED and is_yookassa_ready()
-        if not yandex_ok and not yk_ok:
+        can_card = yk_ok
+        can_split = yandex_ok or yk_ok
+        if payment_method == "card" and not can_card:
             response["payment"] = {
                 "enabled": False,
                 "status": "disabled",
-                "message": "Онлайн-оплата недоступна: задайте YANDEX_PAY_MERCHANT_API_KEY или ключи ЮKassa",
+                "message": "Оплата картой: подключите ЮKassa (shop id + секретный ключ).",
+            }
+        elif payment_method == "split" and not can_split:
+            response["payment"] = {
+                "enabled": False,
+                "status": "disabled",
+                "message": "Сплит: нужен Yandex Pay Merchant API или ЮKassa.",
             }
         else:
             try:
                 amount = float(order.total)
-                if yandex_ok:
+                use_yandex_split = payment_method == "split" and yandex_ok
+                use_yk = payment_method == "card" or (payment_method == "split" and not use_yandex_split)
+                if use_yandex_split:
                     fiscal = YANDEX_PAY_FISCAL_TAX if YANDEX_PAY_FISCAL_TAX is not None else None
                     pay = await create_checkout_order(
                         order_id=result["id"],
-                        payment_method=payment_method,
+                        payment_method="split",
                         items=order_data["items"],
                         total=amount,
                         customer_phone=order.customer_phone,
@@ -612,7 +628,7 @@ async def create_new_order(order: OrderCreate):
                     payment_id = pay.get("payment_id")
                     confirmation_url = pay.get("confirmation_url")
                     status_value = pay.get("status", "pending")
-                else:
+                elif use_yk:
                     payment = await create_payment(
                         order_id=result["id"],
                         amount_rub=amount,
@@ -623,6 +639,8 @@ async def create_new_order(order: OrderCreate):
                     payment_id = payment.get("id")
                     confirmation_url = (payment.get("confirmation") or {}).get("confirmation_url")
                     status_value = payment.get("status", "pending")
+                else:
+                    raise RuntimeError("Нет доступного провайдера оплаты")
                 update_order_payment(
                     result["id"],
                     payment_status=status_value,

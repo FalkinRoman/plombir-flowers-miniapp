@@ -80,6 +80,8 @@ let state = {
         payments: {
             yookassa_enabled: false,
             yandex_checkout_enabled: false,
+            card_checkout_enabled: false,
+            split_checkout_enabled: false,
             split_enabled: false,
             split_months_default: 4,
             split_payment_method_data: 'yandex_pay',
@@ -1485,12 +1487,11 @@ function openOrderForm() {
     const minDate = tomorrow.toISOString().split('T')[0];
 
     const subtotal = getCartTotal();
-    const supportsCard = !!(
-        state.integrations?.payments?.yookassa_enabled || state.integrations?.payments?.yandex_checkout_enabled
-    );
+    const pay = state.integrations?.payments || {};
+    const supportsCard = !!(pay.card_checkout_enabled ?? pay.yookassa_enabled);
     const supportsSplit = !!(
-        state.integrations?.payments?.split_enabled &&
-        (state.integrations?.payments?.yookassa_enabled || state.integrations?.payments?.yandex_checkout_enabled)
+        pay.split_checkout_enabled ??
+        (pay.split_enabled && (pay.yookassa_enabled || pay.yandex_checkout_enabled))
     );
     const loyaltyEnabled = !!state.integrations?.loyalty?.enabled;
     const initialPricing = calculateOrderPricing(subtotal, 0);
@@ -1596,14 +1597,14 @@ function openOrderForm() {
                         <input type="radio" name="payment_method" value="card" ${supportsCard ? '' : 'disabled'} />
                         <div>
                             <strong>Онлайн картой</strong>
-                            <span>${supportsCard ? 'Перейдёте на защищённую страницу оплаты (Яндекс Пэй) после оформления.' : 'Появится после настройки Yandex Pay Merchant API или ЮKassa.'}</span>
+                            <span>${supportsCard ? 'Переход на защищённую оплату банковской картой.' : 'Онлайн-оплата картой временно недоступна.'}</span>
                         </div>
                     </label>
                     <label class="payment-methods__item${supportsSplit ? '' : ' payment-methods__item--disabled'}">
                         <input type="radio" name="payment_method" value="split" ${supportsSplit ? '' : 'disabled'} />
                         <div>
                             <strong>Яндекс Сплит</strong>
-                            <span>${supportsSplit ? `Платеж частями (Яндекс Пэй): от ${formatPrice(initialPricing.split_monthly_payment)} × ${initialPricing.split_months} мес. Редирект на форму Яндекс после оформления.` : 'Нужны API-ключ + merchant id Яндекс Пэй (или ЮKassa), см. .env.'}</span>
+                            <span>${supportsSplit ? `Яндекс Сплит: от ${formatPrice(initialPricing.split_monthly_payment)} × ${initialPricing.split_months} мес. После оформления — переход к оплате.` : 'Оплата частями временно недоступна.'}</span>
                         </div>
                     </label>
                 </div>
@@ -1805,7 +1806,7 @@ async function submitOrder(e) {
         if (wantsOnline && !okPay) {
             const msg =
                 (pay && pay.message) ||
-                'Онлайн-оплата не создана (проверьте Yandex Pay в кабинете и .env). Заказ сохранён — свяжитесь с магазином или попробуйте другой способ.';
+                'Онлайн-оплата не создана. Заказ сохранён — свяжитесь с магазином или выберите другой способ.';
             showToast(msg);
             btn.disabled = false;
             btn.textContent = `Отправить заказ — ${formatPrice(getCartTotal())}`;
@@ -1824,10 +1825,10 @@ async function submitOrder(e) {
 
 function showPaymentAwaitingRedirect(orderId, paymentMethod, confirmationUrl) {
     const isSplit = paymentMethod === 'split';
-    const methodTitle = isSplit ? 'Яндекс Сплит (Яндекс Пэй)' : 'Онлайн-оплата картой';
+    const methodTitle = isSplit ? 'Яндекс Сплит' : 'Оплата картой';
     const detail = isSplit
-        ? 'Откроется страница Яндекс Пэй. Сплит — если подключён в кабинете.'
-        : 'Сейчас откроется защищённая страница оплаты.';
+        ? 'Откроется страница Яндекс Пэй (оплата частями).'
+        : 'Откроется страница оплаты картой.';
     const safeUrl = String(confirmationUrl || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     $screenSuccess.innerHTML = `
         <div class="success">
