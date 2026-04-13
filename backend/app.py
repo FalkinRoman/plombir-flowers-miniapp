@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -34,6 +34,7 @@ from backend.config import (
     YANDEX_PAY_SDK_URL,
     YANDEX_PAY_MERCHANT_ID,
     YANDEX_PAY_THEME,
+    YANDEX_PAY_FISCAL_TAX,
     MOYSKLAD_TOKEN,
     ADMIN_BOOTSTRAP_EMAIL,
     ADMIN_BOOTSTRAP_PASSWORD,
@@ -66,6 +67,12 @@ from backend.orders import (
     ms_product_id_from_assortment_api_row,
 )
 from backend.payments import create_payment, is_yookassa_ready, PaymentConfigError
+from backend.yandex_pay_merchant import (
+    create_checkout_order,
+    is_yandex_checkout_ready,
+    verify_webhook_jwt,
+    YandexPayConfigError,
+)
 from backend.moysklad import create_customerorder, is_moysklad_ready, moysklad_not_ready_reason
 from backend.ui_content import ensure_ui_storage, get_ui_content
 
@@ -329,10 +336,10 @@ async def integrations_public_config():
     return {
         "payments": {
             "yookassa_enabled": bool(YOOKASSA_ENABLED and is_yookassa_ready()),
-            # Виджеты/badge: нужен merchant id. Оплата сплитом всё равно через ЮKassa (create_payment).
+            "yandex_checkout_enabled": bool(is_yandex_checkout_ready()),
+            # Виджеты/badge: merchant id; оплата — Yandex Merchant API и/или ЮKassa.
             "split_enabled": bool(SPLIT_ENABLED and YANDEX_PAY_MERCHANT_ID),
             "split_months_default": SPLIT_MONTHS_DEFAULT,
-            # Что реально уходит в ЮKassa для split (для отладки / согласования с кабинетом)
             "split_payment_method_data": SPLIT_PAYMENT_METHOD_DATA_TYPE
             if SPLIT_PAYMENT_METHOD_DATA_TYPE in {"yandex_pay", "bank_card"}
             else "yandex_pay",
@@ -581,25 +588,41 @@ async def create_new_order(order: OrderCreate):
     response = {"ok": True, "order_id": result["id"]}
 
     if payment_method in {"card", "split"}:
-        if not (YOOKASSA_ENABLED and is_yookassa_ready()):
+        yandex_ok = is_yandex_checkout_ready()
+        yk_ok = YOOKASSA_ENABLED and is_yookassa_ready()
+        if not yandex_ok and not yk_ok:
             response["payment"] = {
                 "enabled": False,
                 "status": "disabled",
-                "message": "Онлайн-оплата временно недоступна: отсутствуют ключи ЮKassa",
+                "message": "Онлайн-оплата недоступна: задайте YANDEX_PAY_MERCHANT_API_KEY или ключи ЮKassa",
             }
         else:
             try:
                 amount = float(order.total)
-                payment = await create_payment(
-                    order_id=result["id"],
-                    amount_rub=amount,
-                    description=f"Заказ Plombir Flowers #{result['id']}",
-                    customer_phone=order.customer_phone,
-                    payment_method=payment_method,
-                )
-                payment_id = payment.get("id")
-                confirmation_url = (payment.get("confirmation") or {}).get("confirmation_url")
-                status_value = payment.get("status", "pending")
+                if yandex_ok:
+                    fiscal = YANDEX_PAY_FISCAL_TAX if YANDEX_PAY_FISCAL_TAX is not None else None
+                    pay = await create_checkout_order(
+                        order_id=result["id"],
+                        payment_method=payment_method,
+                        items=order_data["items"],
+                        total=amount,
+                        customer_phone=order.customer_phone,
+                        fiscal_tax=fiscal,
+                    )
+                    payment_id = pay.get("payment_id")
+                    confirmation_url = pay.get("confirmation_url")
+                    status_value = pay.get("status", "pending")
+                else:
+                    payment = await create_payment(
+                        order_id=result["id"],
+                        amount_rub=amount,
+                        description=f"Заказ Plombir Flowers #{result['id']}",
+                        customer_phone=order.customer_phone,
+                        payment_method=payment_method,
+                    )
+                    payment_id = payment.get("id")
+                    confirmation_url = (payment.get("confirmation") or {}).get("confirmation_url")
+                    status_value = payment.get("status", "pending")
                 update_order_payment(
                     result["id"],
                     payment_status=status_value,
@@ -612,7 +635,7 @@ async def create_new_order(order: OrderCreate):
                     "payment_id": payment_id,
                     "confirmation_url": confirmation_url,
                 }
-            except PaymentConfigError as e:
+            except (PaymentConfigError, YandexPayConfigError) as e:
                 response["payment"] = {"enabled": False, "status": "disabled", "message": str(e)}
             except Exception as e:
                 response["payment"] = {
@@ -1080,6 +1103,97 @@ async def get_ui_content_endpoint():
     return get_ui_content()
 
 
+async def _finalize_order_paid_from_webhook(order_id: int, payment_id: Optional[str], payment_status: str):
+    """Общая логика после успешной онлайн-оплаты (ЮKassa или Yandex Pay)."""
+    update_order_payment(
+        order_id,
+        payment_status=payment_status,
+        payment_id=payment_id,
+        status="Оплачен",
+        inventory_state="reserved",
+    )
+    order = get_order(order_id)
+    if not order:
+        return
+    if is_moysklad_ready():
+        try:
+            ms_id = await create_customerorder(order)
+            if ms_id:
+                update_order_moysklad(order_id, moysklad_order_id=ms_id, sync_error="")
+            else:
+                msg = "MoySklad: customerorder без id в ответе (см. логи plombir.moysklad)"
+                log.error("order_id=%s payment webhook: %s", order_id, msg)
+                update_order_moysklad(order_id, sync_error=msg[:500])
+        except Exception as e:
+            log.exception("order_id=%s payment webhook: MoySklad create_customerorder", order_id)
+            update_order_moysklad(order_id, sync_error=str(e)[:500])
+    else:
+        reason = moysklad_not_ready_reason() or "неизвестно"
+        log.warning("order_id=%s оплачен, MoySklad пропущен: %s", order_id, reason)
+        update_order_moysklad(
+            order_id,
+            sync_error=f"MoySklad не настроен: {reason}"[:500],
+        )
+    asyncio.create_task(_notify_customer_status(order))
+    asyncio.create_task(_notify_admin_payment_paid(order))
+
+
+@app.post("/v1/webhook")
+async def yandex_pay_merchant_webhook(request: Request):
+    """
+    Нотификации Yandex Pay Merchant API. Callback URL в кабинете — базовый HTTPS без /v1/webhook.
+    Тело: application/octet-stream, JWT ES256; проверка по JWKS.
+    """
+    body = await request.body()
+    try:
+        payload = verify_webhook_jwt(body)
+    except Exception as e:
+        log.warning("yandex_pay_webhook: JWT невалиден: %s", e)
+        return JSONResponse(
+            status_code=400,
+            content={"status": "fail", "reasonCode": "UNAUTHORIZED", "reason": str(e)[:500]},
+        )
+
+    event = payload.get("event", "")
+    log.info(
+        "yandex_pay_webhook event=%s merchantId=%s",
+        event,
+        payload.get("merchantId"),
+    )
+
+    if event == "ORDER_STATUS_UPDATED":
+        order_blob = payload.get("order") or {}
+        oid_raw = order_blob.get("orderId")
+        pst = order_blob.get("paymentStatus")
+        if oid_raw is None or oid_raw == "":
+            return JSONResponse(content={"status": "success"})
+        try:
+            order_id = int(str(oid_raw).strip())
+        except ValueError:
+            log.warning("yandex_pay_webhook: orderId не число: %r", oid_raw)
+            return JSONResponse(content={"status": "success"})
+
+        existing = get_order(order_id)
+        if not existing:
+            log.warning("yandex_pay_webhook: заказ %s не найден в БД", order_id)
+            return JSONResponse(content={"status": "success"})
+
+        if pst == "CAPTURED":
+            if (existing.get("status") or "") == "Оплачен":
+                return JSONResponse(content={"status": "success"})
+            await _finalize_order_paid_from_webhook(order_id, str(order_id), "captured")
+        elif pst == "FAILED":
+            update_order_payment(
+                order_id,
+                payment_status="failed",
+                payment_id=str(order_id),
+            )
+        return JSONResponse(content={"status": "success"})
+
+    # OPERATION_STATUS_UPDATED и прочее — дублируют/дополняют сценарии; финализация по ORDER_STATUS_UPDATED.
+    return JSONResponse(content={"status": "success"})
+
+
 @app.post("/api/payments/yookassa/webhook")
 async def yookassa_webhook(request: Request):
     """
@@ -1124,43 +1238,7 @@ async def yookassa_webhook(request: Request):
         return {"ok": True}
 
     if event in {"payment.succeeded", "payment.waiting_for_capture"}:
-        update_order_payment(
-            order_id,
-            payment_status=status or "succeeded",
-            payment_id=payment_id,
-            status="Оплачен",
-            inventory_state="reserved",
-        )
-        order = get_order(order_id)
-        if order:
-            if is_moysklad_ready():
-                try:
-                    ms_id = await create_customerorder(order)
-                    if ms_id:
-                        update_order_moysklad(order_id, moysklad_order_id=ms_id, sync_error="")
-                    else:
-                        msg = "MoySklad: customerorder без id в ответе (см. логи plombir.moysklad)"
-                        log.error("order_id=%s yookassa_webhook: %s", order_id, msg)
-                        update_order_moysklad(order_id, sync_error=msg[:500])
-                except Exception as e:
-                    log.exception(
-                        "order_id=%s yookassa_webhook: MoySklad create_customerorder",
-                        order_id,
-                    )
-                    update_order_moysklad(order_id, sync_error=str(e)[:500])
-            else:
-                reason = moysklad_not_ready_reason() or "неизвестно"
-                log.warning(
-                    "order_id=%s оплачен, MoySklad пропущен: %s",
-                    order_id,
-                    reason,
-                )
-                update_order_moysklad(
-                    order_id,
-                    sync_error=f"MoySklad не настроен: {reason}"[:500],
-                )
-            asyncio.create_task(_notify_customer_status(order))
-            asyncio.create_task(_notify_admin_payment_paid(order))
+        await _finalize_order_paid_from_webhook(order_id, payment_id, status or "succeeded")
     elif event in {"payment.canceled"}:
         update_order_payment(
             order_id,

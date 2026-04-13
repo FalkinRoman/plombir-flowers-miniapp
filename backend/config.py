@@ -84,6 +84,25 @@ YANDEX_PAY_SDK_URL = os.getenv("YANDEX_PAY_SDK_URL", "https://pay.yandex.ru/sdk/
 YANDEX_PAY_MERCHANT_ID = os.getenv("YANDEX_PAY_MERCHANT_ID", "")
 YANDEX_PAY_THEME = os.getenv("YANDEX_PAY_THEME", "light")
 
+# Прямой Yandex Pay Merchant API (без ЮKassa): https://pay.yandex.ru/docs/ru/custom/backend/yandex-pay-api/
+YANDEX_PAY_CHECKOUT_ENABLED = _bool_env("YANDEX_PAY_CHECKOUT_ENABLED", default=True)
+YANDEX_PAY_MERCHANT_API_KEY = os.getenv("YANDEX_PAY_MERCHANT_API_KEY", "").strip()
+YANDEX_PAY_API_SANDBOX = _bool_env("YANDEX_PAY_API_SANDBOX", default=False)
+YANDEX_PAY_API_BASE = (os.getenv("YANDEX_PAY_API_BASE") or "").strip() or (
+    "https://sandbox.pay.yandex.ru/api/merchant" if YANDEX_PAY_API_SANDBOX else "https://pay.yandex.ru/api/merchant"
+)
+YANDEX_PAY_JWKS_URL = (os.getenv("YANDEX_PAY_JWKS_URL") or "").strip() or (
+    "https://sandbox.pay.yandex.ru/api/jwks" if YANDEX_PAY_API_SANDBOX else "https://pay.yandex.ru/api/jwks"
+)
+# Редиректы с платёжной формы (обязательны для онлайн-магазина); по умолчанию как мини-приложение
+YANDEX_PAY_RETURN_URL = os.getenv("YANDEX_PAY_RETURN_URL", WEBAPP_URL).strip()
+# Если в кабинете включена фискализация через Яндекс Пэй — ставь код НДС для позиций (см. доки ФНС в их мануале)
+_ypt = os.getenv("YANDEX_PAY_FISCAL_TAX", "").strip()
+try:
+    YANDEX_PAY_FISCAL_TAX = int(_ypt) if _ypt != "" else None
+except ValueError:
+    YANDEX_PAY_FISCAL_TAX = None
+
 # Автозагрузка hero-баннеров с основного сайта при пустом локальном списке
 SITE_BANNERS_SOURCE_URL = os.getenv("SITE_BANNERS_SOURCE_URL", "https://plombirflowers.ru")
 SITE_BANNERS_TTL_SECONDS = _int_env("SITE_BANNERS_TTL_SECONDS", default=21600)  # 6 часов

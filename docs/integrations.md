@@ -2,27 +2,31 @@
 
 Ниже минимальный набор переменных для полного запуска оплаты, Split и синхронизаций.
 
-## 1) ЮKassa + Yandex Pay / Split
+## 1) Yandex Pay Merchant API (основной сценарий) + Split
 
-**Важно:** отдельного «API только Яндекс» для приёма денег в этом проекте нет — платёж создаётся в **ЮKassa**. Для сплита в теле запроса указывается `payment_method_data.type: yandex_pay` (редирект на **Яндекс Пэй**; Сплит доступен, если продукт включён в кабинете ЮKassa/Яндекс). Переменная `SPLIT_PAYMENT_METHOD_DATA_TYPE` (по умолчанию `yandex_pay`) переопределяет тип; `bank_card` — только отладка.
+Документация: [API для бэкенда](https://pay.yandex.ru/docs/ru/custom/backend/yandex-pay-api/), [вебхук](https://pay.yandex.ru/docs/ru/custom/backend/merchant-api-hidden/webhook).
 
-- `YOOKASSA_ENABLED=1`
-- `YOOKASSA_SHOP_ID=...`
-- `YOOKASSA_SECRET_KEY=...`
-- `YOOKASSA_RETURN_URL=https://<домен>/app`
-- `YOOKASSA_WEBHOOK_URL=https://<домен>/api/payments/yookassa/webhook`
-- `YOOKASSA_WEBHOOK_SECRET=<любой_секрет>`
-- `SPLIT_ENABLED=1`
-- `SPLIT_MONTHS_DEFAULT=4`
-- `SPLIT_PAYMENT_METHOD_DATA_TYPE=yandex_pay` (или `bank_card` для отладки)
-- `YANDEX_PAY_SDK_URL=https://pay.yandex.ru/sdk/v1/pay.js`
-- `YANDEX_PAY_MERCHANT_ID=<merchant_id>`
-- `YANDEX_PAY_THEME=light`
+- `YANDEX_PAY_CHECKOUT_ENABLED=1`
+- `YANDEX_PAY_MERCHANT_API_KEY=...` — ключ Merchant API из [настроек](https://console.pay.yandex.ru/settings) (заголовок `Authorization: Api-Key …`)
+- `YANDEX_PAY_MERCHANT_ID=...` — тот же merchant id (для SDK-бейджей и проверки `merchantId` в JWT вебхука)
+- `YANDEX_PAY_RETURN_URL=https://<домен>/app` — база для `redirectUrls` после оплаты (к query добавляются `order_id`, `pay=ok|abort|error`)
+- **Callback URL** в личном кабинете Яндекс Пэй: **только базовый HTTPS** без пути `/v1/webhook` (Яндекс сам допишет путь). Пример: `https://<домен>` → запросы на `https://<домен>/v1/webhook`
+- `YANDEX_PAY_API_SANDBOX=1` — тестовое окружение (`sandbox.pay.yandex.ru`), в тесте API-ключом часто выступает сам Merchant ID (см. их раздел «Тестирование»)
+- `SPLIT_ENABLED=1`, `SPLIT_MONTHS_DEFAULT=4` — только для UI (подсказки); на форме Сплит включается через `availablePaymentMethods` в запросе создания заказа
+- `YANDEX_PAY_SDK_URL`, `YANDEX_PAY_THEME` — виджеты на витрине
+- `YANDEX_PAY_FISCAL_TAX=<код>` — если в кабинете включена фискализация через Яндекс Пэй: код НДС для каждой позиции корзины + `fiscalContact` (телефон из заказа)
 
-Webhook endpoint (в кабинете ЮKassa указываем `YOOKASSA_WEBHOOK_URL`):
+Эндпоинт вебхука в приложении:
 
-- `POST /api/payments/yookassa/webhook`
-- Header: `X-Plombir-Webhook-Token: <YOOKASSA_WEBHOOK_SECRET>`
+- `POST /v1/webhook` — тело: raw JWT (`Content-Type: application/octet-stream`), проверка подписи ES256 по JWKS (`https://pay.yandex.ru/api/jwks` или sandbox)
+
+### Fallback: ЮKassa
+
+Если **не** задан `YANDEX_PAY_MERCHANT_API_KEY`, онлайн-оплата идёт через ЮKassa (`create_payment`), как раньше.
+
+- `YOOKASSA_ENABLED=1`, `YOOKASSA_SHOP_ID`, `YOOKASSA_SECRET_KEY`, `YOOKASSA_RETURN_URL`
+- `YOOKASSA_WEBHOOK_URL`, `YOOKASSA_WEBHOOK_SECRET` — `POST /api/payments/yookassa/webhook`, заголовок `X-Plombir-Webhook-Token`
+- `SPLIT_PAYMENT_METHOD_DATA_TYPE=yandex_pay` — для сплита через ЮKassa
 
 ## 2) Баллы
 
@@ -73,14 +77,15 @@ Webhook endpoint (в кабинете ЮKassa указываем `YOOKASSA_WEBHO
 - создает заказ в локальной БД,
 - отправляет заказ в МойСклад по правилам "одиночные по коду / групповые как ручная замена".
 
-## 5) Что остается от заказчика
+## 6) Что остается от заказчика
 
-- shopId/secret ЮKassa + включенный Yandex Pay/Split в кабинете.
-- Домен с HTTPS для Mini App и webhook.
+- Кабинет [console.pay.yandex.ru](https://console.pay.yandex.ru): Merchant API ключ, Callback URL (базовый HTTPS), включённые Сплит/фискализация по их чеклисту.
+- Либо (fallback) shopId/secret ЮKassa.
+- Домен с HTTPS для Mini App и вебхука `/v1/webhook`.
 - Токен МойСклад и бизнес-правила по статусам/резерву.
 - Правила баллов (если отличаются от текущего дефолта).
 
-## 6) Автозагрузка hero-баннеров с сайта
+## 7) Автозагрузка hero-баннеров с сайта
 
 Если в `data/ui_content.json` нет локальных баннеров, backend при чтении `/api/ui-content`:
 - забирает hero-картинки с `SITE_BANNERS_SOURCE_URL`,

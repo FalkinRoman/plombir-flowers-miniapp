@@ -79,6 +79,7 @@ let state = {
     integrations: {
         payments: {
             yookassa_enabled: false,
+            yandex_checkout_enabled: false,
             split_enabled: false,
             split_months_default: 4,
             split_payment_method_data: 'yandex_pay',
@@ -1484,10 +1485,12 @@ function openOrderForm() {
     const minDate = tomorrow.toISOString().split('T')[0];
 
     const subtotal = getCartTotal();
-    const supportsCard = !!state.integrations?.payments?.yookassa_enabled;
-    // Сплит: и ЮKassa (создание платежа), и merchant id (виджеты Яндекс Пэй в UI)
+    const supportsCard = !!(
+        state.integrations?.payments?.yookassa_enabled || state.integrations?.payments?.yandex_checkout_enabled
+    );
     const supportsSplit = !!(
-        state.integrations?.payments?.split_enabled && state.integrations?.payments?.yookassa_enabled
+        state.integrations?.payments?.split_enabled &&
+        (state.integrations?.payments?.yookassa_enabled || state.integrations?.payments?.yandex_checkout_enabled)
     );
     const loyaltyEnabled = !!state.integrations?.loyalty?.enabled;
     const initialPricing = calculateOrderPricing(subtotal, 0);
@@ -1593,14 +1596,14 @@ function openOrderForm() {
                         <input type="radio" name="payment_method" value="card" ${supportsCard ? '' : 'disabled'} />
                         <div>
                             <strong>Онлайн картой</strong>
-                            <span>${supportsCard ? 'Перейдете на защищенную страницу ЮKassa после оформления.' : 'Появится после подключения ЮKassa.'}</span>
+                            <span>${supportsCard ? 'Перейдёте на защищённую страницу оплаты (Яндекс Пэй) после оформления.' : 'Появится после настройки Yandex Pay Merchant API или ЮKassa.'}</span>
                         </div>
                     </label>
                     <label class="payment-methods__item${supportsSplit ? '' : ' payment-methods__item--disabled'}">
                         <input type="radio" name="payment_method" value="split" ${supportsSplit ? '' : 'disabled'} />
                         <div>
                             <strong>Яндекс Сплит</strong>
-                            <span>${supportsSplit ? `Платеж частями (Яндекс Пэй): от ${formatPrice(initialPricing.split_monthly_payment)} × ${initialPricing.split_months} мес. Редирект на Яндекс после оформления.` : 'Нужны ЮKassa + merchant id Яндекс Пэй (см. .env).'}</span>
+                            <span>${supportsSplit ? `Платеж частями (Яндекс Пэй): от ${formatPrice(initialPricing.split_monthly_payment)} × ${initialPricing.split_months} мес. Редирект на форму Яндекс после оформления.` : 'Нужны API-ключ + merchant id Яндекс Пэй (или ЮKassa), см. .env.'}</span>
                         </div>
                     </label>
                 </div>
@@ -1802,7 +1805,7 @@ async function submitOrder(e) {
         if (wantsOnline && !okPay) {
             const msg =
                 (pay && pay.message) ||
-                'Онлайн-оплата не создана (проверьте ЮKassa и способ Сплит в кабинете). Заказ сохранён — свяжитесь с магазином или попробуйте «картой».';
+                'Онлайн-оплата не создана (проверьте Yandex Pay в кабинете и .env). Заказ сохранён — свяжитесь с магазином или попробуйте другой способ.';
             showToast(msg);
             btn.disabled = false;
             btn.textContent = `Отправить заказ — ${formatPrice(getCartTotal())}`;
@@ -1823,8 +1826,8 @@ function showPaymentAwaitingRedirect(orderId, paymentMethod, confirmationUrl) {
     const isSplit = paymentMethod === 'split';
     const methodTitle = isSplit ? 'Яндекс Сплит (Яндекс Пэй)' : 'Онлайн-оплата картой';
     const detail = isSplit
-        ? 'Откроется страница Яндекс Пэй. Сплит — если подключён в кабинете (платёж создаётся через ЮKassa).'
-        : 'Сейчас откроется защищённая страница ЮKassa.';
+        ? 'Откроется страница Яндекс Пэй. Сплит — если подключён в кабинете.'
+        : 'Сейчас откроется защищённая страница оплаты.';
     const safeUrl = String(confirmationUrl || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     $screenSuccess.innerHTML = `
         <div class="success">
@@ -2192,12 +2195,12 @@ function renderInfoScreen(page) {
                     </p>
                     <h3 class="service-mobile__subtitle">Способы оплаты</h3>
                     <ul class="service-mobile__list">
-                        <li>Банковской картой или СБП через ЮKassa;</li>
+                        <li>Банковской картой или СБП через Яндекс Пэй;</li>
                         <li>Долями от Т-Банк;</li>
-                        <li>Яндекс Пэй и Сплит.</li>
+                        <li>Яндекс Сплит (рассрочка на форме Яндекс Пэй).</li>
                     </ul>
                     <p class="service-mobile__text">
-                        Платежи происходят через систему ЮKassa, защищены сертификатом SSL и протоколом 3D Secure.
+                        Онлайн-платежи проходят через защищённую форму Яндекс Пэй (SSL, 3D Secure при необходимости).
                         Plombir Flowers не собирает и не хранит платежные данные клиентов.
                     </p>
                     <p class="service-mobile__text">
